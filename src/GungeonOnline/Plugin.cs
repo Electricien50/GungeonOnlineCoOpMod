@@ -22,8 +22,12 @@ namespace GungeonOnline
             Dev.DevEnv.Load();
             harmony = new Harmony(Guid);
             Dev.SaveIsolation.Apply(harmony);
+            Game.BackgroundRun.Install(harmony);
+            Input.InputPump.Install(harmony);
+            Dev.QuickStart.Prepare();
             Log.LogInfo($"{Name} {Version} loaded. dev={Dev.DevEnv.Summary()}");
             gameObject.AddComponent<Dev.DevRunner>();
+            StartCoroutine(Dev.QuickStart.Run());
         }
     }
 }
