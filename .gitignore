@@ -6,3 +6,5 @@ obj/
 *.user
 .vs/
 run/
+tests/NetTests/bin/
+tests/NetTests/obj/
