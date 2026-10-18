@@ -1,0 +1,8 @@
+.game-a/
+.game-b/
+third_party/
+bin/
+obj/
+*.user
+.vs/
+run/
