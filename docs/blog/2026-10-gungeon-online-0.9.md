@@ -4,7 +4,7 @@ date: 2026-10-19
 author: Hero88go
 ---
 
-![Enter The Gungeon Online Co-Op Mod](../media/banner.png)
+![Enter The Gungeon Online Co-Op Mod](../media/hero.png)
 
 # Enter The Gungeon Online Co-Op Mod: real online co-op for Enter the Gungeon
 
@@ -16,7 +16,8 @@ So I built **Enter The Gungeon Online Co-Op Mod**, a mod that turns Gungeon's co
 
 The first thing you notice is that the camera is yours. You explore one room while your friend loots the next one over. Nobody gets dragged into a fight they didn't walk into, and the screen never stops you at the edge because your partner went the other way. When a boss shows up, both of you are gathered for the intro and the kill cam, exactly like vanilla.
 
-![Two screens, one run](../media/two-screens.png)
+![The host's screen](../media/host-view.png)
+![The friend's screen](../media/friend-view.png)
 
 Each player has their own controller, their own HUD, and any Gungeoneer they like. Two Pilots? Fine.
 
@@ -70,8 +71,8 @@ Enter The Gungeon Online Co-Op Mod is original work. It contains no code from Gu
 
 ## Get it
 
-- Download: https://github.com/Hero88go/gungeon-online/releases
-- Source, docs and issues: https://github.com/Hero88go/gungeon-online
+- Download: https://github.com/Hero88go/Enter-The-Gungeon-Online-Co-Op-Mod/releases
+- Source, docs and issues: https://github.com/Hero88go/Enter-The-Gungeon-Online-Co-Op-Mod
 - License: MIT
 
 Enter the Gungeon is made by Dodge Roll and published by Devolver Digital. Enter The Gungeon Online Co-Op Mod is an unofficial fan project, not affiliated with or endorsed by them. If you don't have the game yet, go buy it.

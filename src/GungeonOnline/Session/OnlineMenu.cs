@@ -16,7 +16,7 @@ namespace GungeonOnline.Session
         public static OnlineMenu Instance { get; private set; }
         public static bool IsOpen => Instance != null && Instance.open;
 
-        enum Screen { Home, Host, Join, Session, Settings, ConfirmLeave }
+        enum Screen { Home, Host, Join, Session, Settings, ConfirmLeave, SetGame, SetFriend, SetDisplay, SetHelp }
 
         sealed class Entry
         {
@@ -171,6 +171,7 @@ namespace GungeonOnline.Session
             {
                 case Screen.Home: case Screen.Session: Close(); break;
                 case Screen.ConfirmLeave: Go(Screen.Session); break;
+                case Screen.SetGame: case Screen.SetFriend: case Screen.SetDisplay: case Screen.SetHelp: Go(Screen.Settings); break;
                 default: Go(NetSession.Active ? Screen.Session : Screen.Home); break;
             }
         }
@@ -204,7 +205,6 @@ namespace GungeonOnline.Session
                     Add("Host", () => { s.Host(); Go(Screen.Host); });
                     Add("Join", () => Go(Screen.Join));
                     Add("Settings", () => Go(Screen.Settings));
-                    Add("Save report", () => Reports.Save());
                     Add("Close", Close);
                     break;
                 case Screen.Host:
@@ -231,7 +231,6 @@ namespace GungeonOnline.Session
                             () => Game.AwayGuard.Instance.ContinueAlone = !Game.AwayGuard.Instance.ContinueAlone);
                     Add("Settings", () => Go(Screen.Settings));
                     if (NetSession.IsHost && s.InviteCodeText != null) Add("Show invite code", () => Go(Screen.Host));
-                    Add("Save report", () => Reports.Save());
                     Add("Leave", () => { if (InRun) Go(Screen.ConfirmLeave); else { s.Leave("left"); Go(Screen.Home); } });
                     Add("Close", Close);
                     break;
@@ -243,13 +242,20 @@ namespace GungeonOnline.Session
                     Add("Leave", () => { RunBackup.SaveNow("leaving"); s.Leave("left"); Close(); });
                     break;
                 case Screen.Settings:
-                    int sm = NetConfig.SmoothingMs.Value;
-                    Add("Friend smoothing: " + (sm < 0 ? "Auto" : sm + " ms"), null, true,
-                        d => NetConfig.SmoothingMs.Value = Mathf.Clamp(sm < 0 && d > 0 ? 0 : sm + d * 5, -1, 100));
-                    Add("Correction speed: " + NetConfig.CorrectionSpeed.Value.ToString("F2"), null, true,
-                        d => NetConfig.CorrectionSpeed.Value = Mathf.Clamp(NetConfig.CorrectionSpeed.Value + d * 0.05f, 0.05f, 1f));
+                    Add("Gameplay", () => Go(Screen.SetGame));
+                    Add("Your friend", () => Go(Screen.SetFriend));
+                    Add("Display", () => Go(Screen.SetDisplay));
+                    Add("Help and advanced", () => Go(Screen.SetHelp));
+                    Add("Back", Back);
+                    break;
+                case Screen.SetGame:
                     AddStyleRow();
-                    Add("Friend locator: " + Game.PartnerUI.LocatorNames[NetConfig.LocatorStyle.Value], () => NetConfig.LocatorStyle.Value = NextLocator(NetConfig.LocatorStyle.Value, 1), true,
+                    Add("Pausing stops everyone: " + (NetConfig.PauseFreezesEveryone.Value ? "On" : "Off"), () => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value, true,
+                        d => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value);
+                    Add("Back", Back);
+                    break;
+                case Screen.SetFriend:
+                    Add("Locator: " + Game.PartnerUI.LocatorNames[NetConfig.LocatorStyle.Value], () => NetConfig.LocatorStyle.Value = NextLocator(NetConfig.LocatorStyle.Value, 1), true,
                         d => NetConfig.LocatorStyle.Value = NextLocator(NetConfig.LocatorStyle.Value, d));
                     Add("Name tags: " + Game.PartnerUI.TagNames[NetConfig.NameTagStyle.Value], () => NetConfig.NameTagStyle.Value = Cycle(TagOrder, NetConfig.NameTagStyle.Value, 1), true,
                         d => NetConfig.NameTagStyle.Value = Cycle(TagOrder, NetConfig.NameTagStyle.Value, d));
@@ -260,14 +266,24 @@ namespace GungeonOnline.Session
                         Add("Name opacity: " + OpacityNames[NetConfig.NameOpacity.Value], () => NetConfig.NameOpacity.Value = (NetConfig.NameOpacity.Value + 1) % 3, true,
                             d => NetConfig.NameOpacity.Value = (NetConfig.NameOpacity.Value + d + 3) % 3);
                     }
-                    Add("Friend's crosshair: " + (NetConfig.FriendCrosshair.Value ? "On" : "Off"), () => NetConfig.FriendCrosshair.Value = !NetConfig.FriendCrosshair.Value, true,
+                    Add("Crosshair: " + (NetConfig.FriendCrosshair.Value ? "On" : "Off"), () => NetConfig.FriendCrosshair.Value = !NetConfig.FriendCrosshair.Value, true,
                         d => NetConfig.FriendCrosshair.Value = !NetConfig.FriendCrosshair.Value);
+                    Add("Back", Back);
+                    break;
+                case Screen.SetDisplay:
                     Add("Connection warning: " + WarnNames[NetConfig.ConnWarning.Value], () => NetConfig.ConnWarning.Value = (NetConfig.ConnWarning.Value + 1) % 5, true,
                         d => NetConfig.ConnWarning.Value = (NetConfig.ConnWarning.Value + d + 5) % 5);
                     Add("Overlay size: " + SizeNames[NetConfig.OverlaySize.Value], () => NetConfig.OverlaySize.Value = (NetConfig.OverlaySize.Value + 1) % 3, true,
                         d => NetConfig.OverlaySize.Value = (NetConfig.OverlaySize.Value + d + 3) % 3);
-                    Add("Pausing stops everyone: " + (NetConfig.PauseFreezesEveryone.Value ? "On" : "Off"), () => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value, true,
-                        d => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value);
+                    Add("Back", Back);
+                    break;
+                case Screen.SetHelp:
+                    Add("Save report", () => Reports.Save());
+                    int sm = NetConfig.SmoothingMs.Value;
+                    Add("Friend smoothing: " + (sm < 0 ? "Auto" : sm + " ms"), null, true,
+                        d => NetConfig.SmoothingMs.Value = Mathf.Clamp(sm < 0 && d > 0 ? 0 : sm + d * 5, -1, 100));
+                    Add("Correction speed: " + NetConfig.CorrectionSpeed.Value.ToString("F2"), null, true,
+                        d => NetConfig.CorrectionSpeed.Value = Mathf.Clamp(NetConfig.CorrectionSpeed.Value + d * 0.05f, 0.05f, 1f));
                     Add("Reset to defaults", () =>
                     {
                         NetConfig.SmoothingMs.Value = (int)NetConfig.SmoothingMs.DefaultValue;
@@ -298,6 +314,10 @@ namespace GungeonOnline.Session
                 case Screen.Join: return "Join a friend";
                 case Screen.Session: return "Playing online";
                 case Screen.Settings: return "Settings";
+                case Screen.SetGame: return "Gameplay";
+                case Screen.SetFriend: return "Your friend";
+                case Screen.SetDisplay: return "Display";
+                case Screen.SetHelp: return "Help";
                 case Screen.ConfirmLeave: return "Leave?";
                 default: return "Online Co-Op";
             }
@@ -404,8 +424,9 @@ namespace GungeonOnline.Session
             float row = 17 * px, small = 11 * px;
             // Measure first so the frame fits its content.
             float contentH = 26 * px;
-            if (screen == Screen.Host) contentH += 26 * px + small * 2;
-            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, s.Node != null ? s.Node.Connections.Count : 1)) + 4 * px;
+            string router = screen == Screen.Host ? RouterLine(s) : "";
+            if (screen == Screen.Host) contentH += 22 * px + 3 * px + small + (router.Length > 0 ? small : 0) + 8 * px;
+            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, s.Node != null ? s.Node.Connections.Count : 1)) + 8 * px;
             if (!string.IsNullOrEmpty(info)) contentH += small * WrapCount(info) + 4 * px;
             if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) contentH += small * WrapCount(s.LastError) + 4 * px;
             contentH += row * entries.Count + (typing ? row + small : 0) + small + 10 * px;
@@ -436,15 +457,16 @@ namespace GungeonOnline.Session
 
             if (screen == Screen.Host)
             {
+                // One block: the code, and right under it what to do with it. Then a clear gap before the buttons.
                 string code = s.InviteCodeText ?? "...";
-                GungeonUI.TextCentered(code, cx, cy, GungeonUI.Font.Menu, GungeonUI.Gold, 1.5f);
-                cy += 26 * px;
+                var cs = GungeonUI.TextCentered(code, cx, cy, GungeonUI.Font.Menu, GungeonUI.Gold, 1.5f);
+                cy += Mathf.Max(cs.y, 22 * px) + 3 * px;
                 GungeonUI.TextCentered(s.InviteCodeText != null ? "Copied. Paste it to your friend." : "Getting your code...", cx, cy, GungeonUI.Font.Small, GungeonUI.Cream);
                 cy += small;
-                GungeonUI.TextCentered(RouterLine(s), cx, cy, GungeonUI.Font.Small, Dim);
-                cy += small;
+                if (router.Length > 0) { GungeonUI.TextCentered(router, cx, cy, GungeonUI.Font.Small, Dim); cy += small; }
+                cy += 8 * px;
             }
-            if (screen == Screen.Session) cy = DrawPlayersGame(s, cx, cy, row);
+            if (screen == Screen.Session) cy = DrawPlayersGame(s, cx, cy, row) + 4 * px;
             if (!string.IsNullOrEmpty(info)) cy = Wrapped(info, cx, cy, inner, GungeonUI.Cream) + 4 * px;
             if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join))
                 cy = Wrapped(s.LastError, cx, cy, inner, new Color(1f, 0.55f, 0.45f)) + 4 * px;

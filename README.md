@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/banner.png" alt="Enter The Gungeon Online Co-Op Mod" width="100%">
+  <img src="docs/media/hero.png" alt="Enter The Gungeon Online Co-Op Mod in a boss fight" width="100%">
 </p>
 
 <h1 align="center">Enter The Gungeon Online Co-Op Mod</h1>
@@ -21,10 +21,16 @@
 
 Enter the Gungeon's co-op is couch co-op: one screen, one camera, and player two is stuck as the Cultist. **Enter The Gungeon Online Co-Op Mod** turns it into real online co-op. Each player plays on their own PC, with their own controller, their own camera and any Gungeoneer they like, through the full run.
 
-<p align="center">
-  <img src="docs/media/two-screens.png" alt="The same moment on both PCs: each player's camera follows their own Gungeoneer" width="100%">
-  <br><sub>The same moment on both PCs. Each camera follows its own player.</sub>
-</p>
+<table>
+  <tr>
+    <td><img src="docs/media/host-view.png" alt="The host's screen"></td>
+    <td><img src="docs/media/friend-view.png" alt="The friend's screen"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>The host's screen...</sub></td>
+    <td align="center"><sub>...and the friend's screen, at the same moment. Each camera follows its own player.</sub></td>
+  </tr>
+</table>
 
 ## Why it feels good
 
@@ -73,15 +79,15 @@ A lot of online mods feel great for twenty minutes and then the two games quietl
   </tr>
   <tr>
     <td><img src="docs/media/menu.png" alt="The online menu"></td>
-    <td><img src="docs/media/settings.png" alt="Settings"></td>
+    <td><img src="docs/media/locator.png" alt="Friend locator, pickup tag"></td>
   </tr>
   <tr>
     <td align="center"><sub>Drawn with the game's own fonts and frames. Works with a controller.</sub></td>
-    <td align="center"><sub>Co-op style, friend locator, name tags, connection warning.</sub></td>
+    <td align="center"><sub>The default locator: your friend's head and distance at the screen edge.</sub></td>
   </tr>
   <tr>
     <td><img src="docs/media/boss.png" alt="Boss fight"></td>
-    <td><img src="docs/media/locator.png" alt="Friend locator"></td>
+    <td><img src="docs/media/locator-bubble.png" alt="Friend locator"></td>
   </tr>
   <tr>
     <td align="center"><sub>Boss fights, bullets and all, on both screens.</sub></td>
@@ -91,7 +97,7 @@ A lot of online mods feel great for twenty minutes and then the two games quietl
 
 ## Roadmap
 
-- **3 to 4 players.** Today it is 2, because that is what Gungeon itself supports. The netcode was built for 4 from day one; this is the next big thing.
+- **4-player support is in active development** and it is the next thing coming. The netcode was built for 4 from day one; today the game side supports 2.
 - **Free for all co-op style:** fight in different rooms at the same time.
 - More scripted moments covered online (Pasts, secret floors, rarer synergies).
 
