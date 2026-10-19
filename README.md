@@ -103,26 +103,6 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 - **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
 - Anything else: [open an issue](../../issues) and attach the file from *Save report* (Settings, Help).
 
-## FAQ
-
-**Does it use rollback netcode?**
-No. Rollback means rewinding and replaying the whole game every time a late input arrives. Enter the Gungeon wasn't built for that: thousands of unseeded random rolls and coroutines would make two games drift apart. Enter The Gungeon Online Co-Op Mod uses host-authoritative netcode with local prediction instead. Your own character has zero added input delay (the same benefit rollback gives you), and the game cannot desync. Full rollback is being researched as a separate, later project.
-
-**What about latency to my friend?**
-Your own character is never delayed. Your friend's character, the enemies and the bullets show up about half your ping behind. The mod's own work costs about 0.2 ms per frame on the host.
-
-**Can more than 2 people play?**
-Not yet. Enter the Gungeon itself supports two players. The netcode is written for more (a slot array and star topology), and 3 to 4 players is on the roadmap.
-
-**Does it work on Steam Deck / Linux?**
-Not tested yet.
-
-**Do I need to own the game?**
-Yes. Nothing from the game is included. Each player needs their own copy.
-
-**Will it touch my saves?**
-Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
-
 ## Features
 
 - **Any character for both players**, duplicates allowed. Pick in your own Breach.
@@ -181,6 +161,26 @@ Enter The Gungeon Online Co-Op Mod is original work. **It contains no code from 
 ## Donate
 
 My mods will always be free but donations are welcome! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
+
+## FAQ
+
+**Does it use rollback netcode?**
+No. Rollback means rewinding and replaying the whole game every time a late input arrives. Enter the Gungeon wasn't built for that: thousands of unseeded random rolls and coroutines would make two games drift apart. Enter The Gungeon Online Co-Op Mod uses host-authoritative netcode with local prediction instead. Your own character has zero added input delay (the same benefit rollback gives you), and the game cannot desync. Full rollback is being researched as a separate, later project.
+
+**What about latency to my friend?**
+Your own character is never delayed. Your friend's character, the enemies and the bullets show up about half your ping behind. The mod's own work costs about 0.2 ms per frame on the host.
+
+**Can more than 2 people play?**
+Not yet. Enter the Gungeon itself supports two players. The netcode is written for more (a slot array and star topology), and 3 to 4 players is on the roadmap.
+
+**Does it work on Steam Deck / Linux?**
+Not tested yet.
+
+**Do I need to own the game?**
+Yes. Nothing from the game is included. Each player needs their own copy.
+
+**Will it touch my saves?**
+Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
 
 ## Status
 
