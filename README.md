@@ -95,14 +95,6 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 - **4-player support is in active development**. The netcode was built for 4 from day one; today the game side supports 2.
 - **Free for all co-op style:** fight in different rooms at the same time.
 
-## Troubleshooting
-
-- **No PLAY ONLINE in the pause menu:** the files went into the wrong folder. They must sit right next to `EtG.exe` (you should see `winhttp.dll` and the `BepInEx` folder beside it). Steam players: check you copied into the folder that **Browse local files** opened.
-- **The installer window closes or does nothing:** use Option B, it does the same thing.
-- **"Your friend has a different version":** both players need the same download. Get the latest from [Releases](../../releases).
-- **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
-- Anything else: [open an issue](../../issues) and attach the file from *Save report* (Settings, Help).
-
 ## Features
 
 - **Any character for both players**, duplicates allowed. Pick in your own Breach.
@@ -181,6 +173,14 @@ Yes. Nothing from the game is included. Each player needs their own copy.
 
 **Will it touch my saves?**
 Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
+
+## Troubleshooting
+
+- **No PLAY ONLINE in the pause menu:** the files went into the wrong folder. They must sit right next to `EtG.exe` (you should see `winhttp.dll` and the `BepInEx` folder beside it). Steam players: check you copied into the folder that **Browse local files** opened.
+- **The installer window closes or does nothing:** use Option B, it does the same thing.
+- **"Your friend has a different version":** both players need the same download. Get the latest from [Releases](../../releases).
+- **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
+- Anything else: [open an issue](../../issues) and attach the file from *Save report* (Settings, Help).
 
 ## Status
 
