@@ -24,6 +24,8 @@ namespace GungeonOnline.Replication
 
         /// <summary>Instance ids of bullet copies made from host events (their Start runs a frame later).</summary>
         static readonly HashSet<int> copyIds = new HashSet<int>();
+        /// <summary>Copies (rigidbody ids) that touched our own player: their early end is a real hit, not a loss.</summary>
+        static readonly HashSet<int> touchedMe = new HashSet<int>();
         static bool IsClient => NetSession.Active && !NetSession.IsHost;
         static bool IsHostSession => NetSession.Active && NetSession.IsHost;
 
@@ -32,18 +34,20 @@ namespace GungeonOnline.Replication
         readonly Dictionary<uint, Projectile> copies = new Dictionary<uint, Projectile>();
         static readonly Dictionary<string, GameObject> prefabs = new Dictionary<string, GameObject>();
         uint nextId = 1;
-        public int Announced, Updates, Copies, LocalSuppressed, UnknownPrefabs;
+        public int Announced, Sent, Updates, Copies, LocalSuppressed, UnknownPrefabs, Resent, EarlyDeaths, EarlyNearMe;
+        int earlyLogged;
         readonly WireWriter w = new WireWriter(128);
 
         public static void Install(Harmony h)
         {
             h.Patch(AccessTools.Method(typeof(Projectile), nameof(Projectile.Start)), prefix: new HarmonyMethod(typeof(ProjectileSync), nameof(StartPrefix)), postfix: new HarmonyMethod(typeof(ProjectileSync), nameof(StartPostfix)));
+            h.Patch(AccessTools.Method(typeof(StaticReferenceManager), nameof(StaticReferenceManager.DestroyAllProjectiles)), prefix: new HarmonyMethod(typeof(ProjectileSync), nameof(DestroyAllPrefix)));
         }
 
         void Awake() { Instance = this; }
 
         /// <summary>New floor: forget every bullet (copies that died locally never get a destroy event).</summary>
-        public void OnFloorChanged() { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); }
+        public void OnFloorChanged() { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); touchedMe.Clear(); }
         void Start() { NetSession.Instance.SessionEnded += () => { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); }; }
 
         /// <summary>Bullets the host owns: not from a player, able to hit players.</summary>
@@ -75,11 +79,45 @@ namespace GungeonOnline.Replication
             return false;
         }
 
+        /// <summary>Guest: a boss intro (or anything else) that clears every bullet on screen leaves the host's bullet
+        /// copies alone. On the host those bullets keep flying, and the host says when each one ends.</summary>
+        static bool DestroyAllPrefix()
+        {
+            if (!NetSession.Active || !IsClient || copyIds.Count == 0) return true;
+            var list = new List<Projectile>();
+            foreach (var p in StaticReferenceManager.AllProjectiles)
+                if (p && !copyIds.Contains(p.GetInstanceID())) list.Add(p);
+            foreach (var p in list) p.DieInAir(false, false);
+            return false;
+        }
+
         static void StartPostfix(Projectile __instance)
         {
             if (!NetSession.Active || !HostOwned(__instance)) return;
             IgnoreRemotePlayers(__instance);
+            if (IsClient && copyIds.Contains(__instance.GetInstanceID())) OnlyHitsMe(__instance); // Start may reset collision settings
             if (IsHostSession) Instance.Announce(__instance);
+        }
+
+        /// <summary>
+        /// Guest: a copy of a host bullet only ever touches our own player (that hit is ours to judge). Walls, enemies
+        /// and everything else are the host's call: its bullet may curve past a wall the straight-flying copy would
+        /// clip, or spawn inside the boss that fired it. The host's destroy event ends the copy at the real impact point.
+        /// </summary>
+        static void OnlyHitsMe(Projectile p)
+        {
+            var rb = p.specRigidbody;
+            if (rb == null) return;
+            rb.CollideWithTileMap = false;
+            rb.OnPreRigidbodyCollision -= CopyPreCollision;
+            rb.OnPreRigidbodyCollision += CopyPreCollision;
+        }
+
+        static void CopyPreCollision(SpeculativeRigidbody me, PixelCollider myCollider, SpeculativeRigidbody other, PixelCollider otherCollider)
+        {
+            var local = PlayerSlots.Local;
+            if (!local || other != local.specRigidbody) PhysicsEngine.SkipCollision = true;
+            else touchedMe.Add(me.GetInstanceID());
         }
 
         /// <summary>Each machine judges hits only on its own player.</summary>
@@ -101,8 +139,27 @@ namespace GungeonOnline.Replication
             w.U8(EvProjSpawn); w.U32(id); w.Str(Key(p));
             w.F32(pos.x); w.F32(pos.y); w.F32(vel.x); w.F32(vel.y);
             w.U32(NetIds.Of(p.Owner as AIActor));
-            Send(w.ToArray());
+            if (Send(w.ToArray()) > 0) Sent++;
             Announced++;
+        }
+
+        /// <summary>Host: a guest just finished loading the floor; send every enemy bullet still in the air
+        /// (bullets fired while it was loading were never sent to it).</summary>
+        public void SendAllTo(Connection c)
+        {
+            foreach (var kv in hostTracked)
+            {
+                var p = kv.Value.P;
+                if (!p) continue;
+                Vector2 pos = p.transform.position;
+                Vector2 vel = p.specRigidbody != null ? p.specRigidbody.Velocity : p.Direction * p.Speed;
+                w.Reset();
+                w.U8(EvProjSpawn); w.U32(kv.Key); w.Str(Key(p));
+                w.F32(pos.x); w.F32(pos.y); w.F32(vel.x); w.F32(vel.y);
+                w.U32(NetIds.Of(p.Owner as AIActor));
+                c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
+                Resent++;
+            }
         }
 
         void OnHostDestroyed(uint id, Projectile p)
@@ -113,11 +170,13 @@ namespace GungeonOnline.Replication
             Send(w.ToArray());
         }
 
-        void Send(byte[] data)
+        int Send(byte[] data)
         {
             var ws = WorldSync.Instance;
+            int n = 0;
             foreach (var c in NetSession.Instance.Node.Connections)
-                if (ws != null && ws.IsReady(c)) c.Send((byte)Channel.Event, data, Delivery.ReliableOrdered);
+                if (ws != null && ws.IsReady(c)) { c.Send((byte)Channel.Event, data, Delivery.ReliableOrdered); n++; }
+            return n;
         }
 
         /// <summary>Host: send a correction for bullets whose path left the straight line the client predicts.</summary>
@@ -161,6 +220,7 @@ namespace GungeonOnline.Replication
                         var pos = new Vector2(r.F32(), r.F32());
                         var vel = new Vector2(r.F32(), r.F32());
                         var owner = NetIds.Get<AIActor>(r.U32());
+                        if (copies.TryGetValue(id, out var have) && have) break; // already flying (sent again on a refresh)
                         if (!prefabs.TryGetValue(key, out var prefab))
                         {
                             UnknownPrefabs++;
@@ -174,6 +234,10 @@ namespace GungeonOnline.Replication
                         MakeCopy(p, owner, vel);
                         copies[id] = p;
                         Copies++;
+                        // A copy that dies here before the host says so was cut short on this screen: count it.
+                        uint cid = id;
+                        float born = Time.time;
+                        p.OnDestruction += proj => { if (copies.TryGetValue(cid, out var c) && c == proj) { EarlyDeaths++; NoteEarly(proj, Time.time - born); copies.Remove(cid); copyIds.Remove(proj.GetInstanceID()); } };
                         break;
                     }
                 case EvProjUpdate:
@@ -194,6 +258,7 @@ namespace GungeonOnline.Replication
                         if (copies.TryGetValue(id, out var p) && p)
                         {
                             copyIds.Remove(p.GetInstanceID());
+                            copies.Remove(id);
                             p.transform.position = new Vector3(pos.x, pos.y, p.transform.position.z);
                             p.DieInAir();
                         }
@@ -201,6 +266,16 @@ namespace GungeonOnline.Replication
                         break;
                     }
             }
+        }
+
+        /// <summary>Why a copy died before the host said so: a hit on our own player is correct, anything else is not.</summary>
+        void NoteEarly(Projectile proj, float age)
+        {
+            var me = PlayerSlots.Local;
+            float d = me && proj ? Vector2.Distance(proj.transform.position, me.CenterPosition) : 99f;
+            if (proj && proj.specRigidbody && touchedMe.Remove(proj.specRigidbody.GetInstanceID())) { EarlyNearMe++; return; }
+            if (earlyLogged++ < 3)
+                Plugin.Log.LogInfo($"ProjectileSync: copy died early age={age:F2}s dist={d:F1} at={(Vector2)proj.transform.position} speed={proj.Speed:F1} room={(me && me.CurrentRoom != null ? me.CurrentRoom.GetRoomName() : "-")}");
         }
 
         static void MakeCopy(Projectile p, AIActor owner, Vector2 vel)
@@ -218,6 +293,7 @@ namespace GungeonOnline.Replication
             p.baseData.range = 1000f;
             SetVelocity(p, vel);
             IgnoreRemotePlayers(p);
+            OnlyHitsMe(p);
         }
 
         static void SetVelocity(Projectile p, Vector2 vel)

@@ -29,6 +29,8 @@ namespace GungeonOnline.Replication
         readonly Dictionary<int, uint> hurtApplied = new Dictionary<int, uint>(); // host: per slot, last report applied
         readonly Dictionary<int, string> lastVitals = new Dictionary<int, string>();
         readonly HashSet<int> dyingSent = new HashSet<int>();
+        /// <summary>Guest: players whose death the host announced and we already ran (health alone can read 0 first).</summary>
+        readonly HashSet<int> deathRun = new HashSet<int>();
         public int HurtsSent, HurtsApplied, VitalsSent, VitalsApplied;
         readonly WireWriter w = new WireWriter(128);
 
@@ -198,8 +200,12 @@ namespace GungeonOnline.Replication
             }
             else if (type == EvPlayerDied && !NetSession.IsHost)
             {
-                var p = PlayerSlots.ForSlot(r.U8());
-                if (!p || p.healthHaver == null || p.healthHaver.IsDead || p.IsGhost) return;
+                int slot = r.U8();
+                var p = PlayerSlots.ForSlot(slot);
+                // Not IsDead: a health update can set this copy to 0 before this event lands, and the death (ghost,
+                // or game over when nobody is left) must still run here exactly once.
+                if (!p || p.healthHaver == null || p.IsGhost || deathRun.Contains(slot)) return;
+                deathRun.Add(slot);
                 scope = true;
                 try { p.healthHaver.ForceSetCurrentHealth(0f); p.healthHaver.Armor = 0f; p.healthHaver.Die(Vector2.zero); }
                 finally { scope = false; }
@@ -209,6 +215,7 @@ namespace GungeonOnline.Replication
                 var p = PlayerSlots.ForSlot(r.U8());
                 var at = new Vector2(r.F32(), r.F32());
                 if (!p || !p.IsGhost) return;
+                deathRun.Remove(PlayerSlots.SlotOf(p));
                 scope = true;
                 try { p.ResurrectFromChest(at); }
                 finally { scope = false; }
@@ -233,6 +240,7 @@ namespace GungeonOnline.Replication
                     {
                         if (Mathf.Abs(p.healthHaver.GetMaxHealth() - max) > 0.01f) p.healthHaver.SetHealthMaximum(max);
                         if (Mathf.Abs(p.healthHaver.GetCurrentHealth() - hp) > 0.01f) p.healthHaver.ForceSetCurrentHealth(hp);
+                        if (hp > 0f && !p.IsGhost) deathRun.Remove(slot);
                         if (Mathf.Abs(p.healthHaver.Armor - armor) > 0.01f) p.healthHaver.Armor = armor;
                         if (p.Blanks != blanks) p.Blanks = blanks;
                         if (p.carriedConsumables != null)

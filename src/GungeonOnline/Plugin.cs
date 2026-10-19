@@ -9,7 +9,7 @@ namespace GungeonOnline
     {
         public const string Guid = "gungeononline";
         public const string Name = "Enter The Gungeon Online Co-Op Mod";
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;
@@ -68,17 +68,21 @@ namespace GungeonOnline
             StartCoroutine(Dev.QuickStart.Run());
             Dev.AutoSession.Begin();
             StartCoroutine(Welcome());
+            StartCoroutine(Session.UpdateCheck.Run());
         }
 
         /// <summary>Run over (everyone dead): the saved run is finished and is not offered for resuming.</summary>
         static void OnGameOver()
         {
+            Plugin.Log.LogInfo("Game over (everyone is down)");
             if (Session.NetSession.Active && Session.NetSession.IsHost) Session.RunBackup.MarkEnded();
         }
 
         System.Collections.IEnumerator Welcome()
         {
-            if (Dev.DevEnv.IsHarness || Session.NetConfig.WelcomeShown.Value) yield break;
+            // The new-user test (GO_FIRST_RUN=1) checks the welcome like a real first launch.
+            bool firstRunTest = System.Environment.GetEnvironmentVariable("GO_FIRST_RUN") == "1";
+            if ((Dev.DevEnv.IsHarness && !firstRunTest) || Session.NetConfig.WelcomeShown.Value) yield break;
             yield return new UnityEngine.WaitForSeconds(6f);
             Session.Toasts.Show("Enter The Gungeon Online Co-Op Mod is ready. Pause and pick Play Online, or hold Back + Start.", 9f);
             Session.NetConfig.WelcomeShown.Value = true;

@@ -6,11 +6,23 @@ using UnityEngine;
 namespace GungeonOnline.Session
 {
     /// <summary>
-    /// "Save report": one text file on the Desktop with everything needed to look into a problem afterwards
-    /// (mod log, desync log, settings, connection numbers). No zip library on this runtime, so it is one file.
+    /// "Send report": one text file with everything needed to look into a problem afterwards (mod log, desync log,
+    /// settings, connection numbers), saved to the Desktop and sent to the developer. Anything that points at a
+    /// person (invite codes, IP addresses, the Windows user name, Steam ids) is removed first.
     /// </summary>
     internal static class Reports
     {
+        const string RelayUrl = "https://gungeon-report-relay.firescribe-share-worker.workers.dev/report";
+
+        public static string Scrub(string text)
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\b[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b", "XXXX-XXXX-XXXX");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b", "<ip>");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"([A-Za-z]:[\\/]+Users[\\/]+)[^\\/\r\n]+", "$1<user>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\b7656119\d{10}\b", "<steamid>");
+            return text;
+        }
+
         public static void Save()
         {
             try
@@ -18,6 +30,8 @@ namespace GungeonOnline.Session
                 var sb = new StringBuilder();
                 sb.AppendLine("Enter The Gungeon Online Co-Op Mod report " + DateTime.Now.ToString("s"));
                 sb.AppendLine("Mod " + Plugin.Version + "  game " + NetSession.GameHash);
+                sb.AppendLine("Mod version: " + Plugin.Version);
+                sb.AppendLine("Role: " + (NetSession.Active ? (NetSession.IsHost ? "host" : "guest") : "offline"));
                 var s = NetSession.Instance;
                 sb.AppendLine("Session: " + (s != null ? s.Status : "none") + (NetSession.Active ? (NetSession.IsHost ? " (host)" : " (guest)") : ""));
                 if (s != null && s.Node != null)
@@ -30,15 +44,48 @@ namespace GungeonOnline.Session
                 Append(sb, "Desync log", Path.Combine(Path.Combine(BepInEx.Paths.BepInExRootPath, "GungeonOnline"), "desync.log"), 300);
                 Append(sb, "Metrics (last 10 minutes)", Metrics.FilePath, 120);
                 Append(sb, "Mod log (last lines)", Path.Combine(BepInEx.Paths.BepInExRootPath, "LogOutput.log"), 1500);
-                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                // Tests keep their copy in the run folder, never on the Desktop.
+                string desktop = Environment.GetEnvironmentVariable("GO_RUN_DIR") ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 string file = Path.Combine(desktop, "GungeonOnline-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
-                File.WriteAllText(file, sb.ToString());
-                Toasts.Show("Report saved to your Desktop");
+                string text = Scrub(sb.ToString());
+                File.WriteAllText(file, text);
+                Toasts.Show("Sending report...");
+                Plugin.Instance.StartCoroutine(Send(text));
             }
             catch (Exception e)
             {
                 Plugin.Log.LogError("Report: " + e.Message);
                 Toasts.Show("Could not save the report", 4f, true);
+            }
+        }
+
+        static System.Collections.IEnumerator Send(string text)
+        {
+            // Tests point this somewhere else or turn it off (GO_REPORT_URL=off).
+            string url = Environment.GetEnvironmentVariable("GO_REPORT_URL") ?? RelayUrl;
+            if (url == "off") { Toasts.Show("Report saved to your Desktop"); yield break; }
+            var body = Encoding.UTF8.GetBytes(text);
+            using (var req = new UnityEngine.Networking.UnityWebRequest(url, "POST"))
+            {
+                req.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(body) { contentType = "text/plain; charset=utf-8" };
+                req.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "text/plain; charset=utf-8");
+                req.timeout = 20;
+                yield return req.SendWebRequest();
+                string answer = req.downloadHandler != null ? req.downloadHandler.text ?? "" : "";
+                if (!req.isNetworkError && !req.isHttpError && answer.StartsWith("sent "))
+                {
+                    string id = answer.Substring(5).Trim();
+                    Plugin.Log.LogInfo("Report sent: " + id);
+                    Toasts.Show("Report sent (" + id + "). A copy is on your Desktop.", 8f);
+                }
+                else if (req.responseCode == 429)
+                    Toasts.Show("Report saved to your Desktop (one send every 2 minutes)", 6f, true);
+                else
+                {
+                    Plugin.Log.LogInfo("Report send failed: " + req.responseCode + " " + req.error);
+                    Toasts.Show("Could not send the report. It is saved on your Desktop.", 6f, true);
+                }
             }
         }
 

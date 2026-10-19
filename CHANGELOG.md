@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.1
+
+**Fixes**
+- The guest now sees every enemy bullet. Walking into a boss room after the fight had started cleared the boss's bullets on the guest's screen while they kept flying for the host. Bullets already in the air when the guest finishes loading a floor are sent too.
+- Rejoining as the Paradox or the Gunslinger no longer charges Hegemony Credits again.
+- A screen that stays black while you can still move now fades back in by itself within a few seconds.
+- When both players go down, both games now end the run (the guest could keep walking around as a ghost).
+- The ping shown in the menu and the connection warning is steady now (it used to jump with every frame hitch).
+
+**New**
+- *Send report* (was Save report) sends the report to me as well as saving it to your Desktop. Invite codes, IP addresses, your Windows user name and Steam ids are removed first.
+- The game tells you when a new version is out: one check at launch, nothing about you is sent. Turn it off in Settings, Help and advanced.
+
+**Updating from 1.0:** run the installer again (or copy the files over). Your settings and saved runs are kept.
+
 ## 1.0 (first public release)
 
 **Play**
@@ -40,7 +55,7 @@
 - Lower cost per frame (health and money sync no longer rebuilds text every frame).
 
 **Known issue**
-- In some fights the guest does not see a few of the enemies' bullets. Those bullets can't hit the guest (hits are decided on the guest's own screen), and everything else stays in sync. Being worked on.
+- In some fights the guest does not see a few of the enemies' bullets. Those bullets can't hit the guest (hits are decided on the guest's own screen), and everything else stays in sync. Fixed in 1.0.1.
 
 **Tools**
 - *Save report* writes a report to your Desktop. `metrics.jsonl` records connection numbers every 5 seconds.

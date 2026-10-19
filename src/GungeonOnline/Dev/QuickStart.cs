@@ -28,10 +28,23 @@ namespace GungeonOnline.Dev
                 // Do not wait on IsSelectingCharacter: at high frame rates it can flip before this loop sees it.
                 if (Game.SceneObjects.InBreach && GameManager.HasInstance && GameManager.Instance.PrimaryPlayer == null)
                 {
+                    FoyerCharacterSelectFlag carrier = null;
                     foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>())
-                        if (!f.IsCoopCharacter && !f.IsAlternateCostume && f.CharacterPrefabPath != null &&
-                            f.CharacterPrefabPath.EndsWith(want))
-                            pick = f;
+                        if (!f.IsCoopCharacter && !f.IsAlternateCostume && f.CharacterPrefabPath != null)
+                        {
+                            bool unlocked = f.PrerequisitesFulfilled();
+                            bool wanted = f.CharacterPrefabPath.EndsWith(want);
+                            if (wanted && unlocked) pick = f;
+                            else if (!wanted && unlocked && carrier == null) carrier = f;
+                        }
+                    // A blank test save has not unlocked the Robot, Bullet, Paradox or Gunslinger and the game removes
+                    // their statues, but the tests play every character: an unlocked statue carries the locked one's path.
+                    if (pick == null && carrier != null)
+                    {
+                        carrier.CharacterPrefabPath = want;
+                        pick = carrier;
+                        Plugin.Log.LogInfo("QuickStart: " + want + " is locked on this save, picking it through another statue");
+                    }
                     if (pick != null) break;
                 }
                 yield return null;

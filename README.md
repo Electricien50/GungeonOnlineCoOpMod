@@ -81,7 +81,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-Download **`GungeonOnline-1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
+Download the latest **`GungeonOnline-1.0.1.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
 
 ### Option A: the installer (easiest)
 
@@ -92,6 +92,8 @@ Download **`GungeonOnline-1.0.zip`** from [Releases](../../releases) and unzip i
 If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**. That warning appears for any downloaded .bat file. If you'd rather not run it, use Option B; it does exactly the same thing.
 
 To remove the mod later, double-click **`Uninstall Gungeon Online.bat`**.
+
+**Updating:** download the new zip and do the same thing again over your old install. Your settings and saved runs are kept. The game tells you when a new version is out.
 
 ### Option B: copy the files yourself
 
@@ -139,7 +141,7 @@ My mods will always be free but donations are welcome on kofi! [ko-fi.com/hero88
 - **Per-player aim assist:** each player's own aim assist setting applies to their character on every PC.
 - **Find each other:** a small tag at the screen edge points to your friend when they are off your screen. Optional name tags and your friend's crosshair, in the colors you pick.
 - **Settings in plain words:** smoothing for your friend's character, correction speed, pause behaviour.
-- **Save report:** one button writes a report to your Desktop if anything looks off.
+- **Send report:** one button sends me a report (and saves a copy to your Desktop) if anything looks off. Invite codes, IP addresses and your Windows user name are removed first.
 - **One-click install:** the installer finds the game on Steam, GOG or Epic by itself.
 
 ## How it plays differently from couch co-op
@@ -181,11 +183,11 @@ Your normal save is used and gets credit for runs you play online. Run backups g
 - **The installer window closes or does nothing:** use Option B, it does the same thing.
 - **"Your friend has a different version":** both players need the same download. Get the latest from [Releases](../../releases).
 - **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
-- Anything else: [open an issue](../../issues) and attach the file from *Save report* (Settings, Help).
+- Anything else: [open an issue](../../issues) and use *Send report* (Settings, Help and advanced).
 
 ## Status
 
-Version 1.0 beta. **Found a bug? Please [open an issue](../../issues)** and attach the file from *Save report* (Settings, Help) if you can. Every report helps.
+Version 1.0.1 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
 
 ## Settings
 

@@ -24,6 +24,7 @@ namespace GungeonOnline.Session
         public static ConfigEntry<string> PlayerId;
         public static ConfigEntry<string> LastJoin;
         public static ConfigEntry<bool> WelcomeShown;
+        public static ConfigEntry<bool> CheckUpdates;
 
         public static void Bind(ConfigFile c)
         {
@@ -76,6 +77,7 @@ namespace GungeonOnline.Session
             if (string.IsNullOrEmpty(PlayerId.Value)) PlayerId.Value = System.Guid.NewGuid().ToString("N");
             LastJoin = c.Bind("Internal", "LastJoin", "", "Do not edit. The last game you joined, for Rejoin.");
             WelcomeShown = c.Bind("Internal", "WelcomeShown", false, "Do not edit.");
+            CheckUpdates = c.Bind("General", "CheckForUpdates", true, "Once per launch, ask GitHub if a newer version is out and say so.");
         }
     }
 }

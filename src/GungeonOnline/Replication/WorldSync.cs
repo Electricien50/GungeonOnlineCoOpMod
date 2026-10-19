@@ -413,6 +413,7 @@ namespace GungeonOnline.Replication
                         if (room.IsSealed) { w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(true); c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered); }
                     PickupSync.Instance?.SendAllTo(c);
                     ShopSync.Instance?.SendAllTo(c);
+                    ProjectileSync.Instance?.SendAllTo(c);
                     InventorySync.Instance?.ForceResend();
                     VitalsSync.Instance?.ForceResend();
                     Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready");

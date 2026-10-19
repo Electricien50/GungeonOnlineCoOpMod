@@ -226,11 +226,25 @@ namespace GungeonOnline.Dev
         /// GO_SWAP_TEST=1 (client): 6 s after both players exist, take the Breach door back to character select,
         /// pick the Convict, and check that the host sees the new character.
         /// </summary>
+        float swapLog;
         void SwapTest(float t)
         {
             if (swapStep >= 2 || Session.NetSession.IsHost || System.Environment.GetEnvironmentVariable("GO_SWAP_TEST") != "1") return;
             if (swapStep == 1)
             {
+                // Real time: game time stands still on the title screen.
+                if (Time.realtimeSinceStartup - swapLog > 5f)
+                {
+                    swapLog = Time.realtimeSinceStartup;
+                    // The character select door goes through the title screen: press New Game like a player would.
+                    var title = Object.FindObjectOfType<MainMenuFoyerController>();
+                    if (title && Foyer.DoMainMenu && !GameManager.Instance.IsLoadingLevel)
+                    {
+                        Plugin.Log.LogInfo("Harness: title screen, pressing New Game");
+                        HarmonyLib.AccessTools.Method(typeof(MainMenuFoyerController), "OnNewGameSelected").Invoke(title, new object[] { null, null });
+                    }
+                    Plugin.Log.LogInfo($"Harness: swap waiting breach={Game.SceneObjects.InBreach} player={(GameManager.Instance.PrimaryPlayer != null)} loading={GameManager.Instance.IsLoadingLevel} selecting={GameManager.Instance.IsSelectingCharacter}");
+                }
                 if (Game.SceneObjects.InBreach && GameManager.Instance.PrimaryPlayer == null && !GameManager.Instance.IsLoadingLevel)
                 {
                     swapStep = 2;
@@ -349,6 +363,40 @@ namespace GungeonOnline.Dev
             me.healthHaver.ForceSetCurrentHealth(1f);
             me.healthHaver.ApplyDamage(0.5f, Vector2.zero, "harness", CoreDamageTypes.None, DamageCategory.Normal, true);
             Plugin.Log.LogInfo("Harness: client at half a heart");
+        }
+
+        bool forcedBlack, reportSent;
+        /// <summary>Harness (GO_FORCE_BLACK=second): leave this screen faded to black like a lost fade-in.</summary>
+        void ForceBlack(float t)
+        {
+            var v = System.Environment.GetEnvironmentVariable("GO_FORCE_BLACK");
+            if (forcedBlack || v == null || Pixelator.Instance == null || t < float.Parse(v, System.Globalization.CultureInfo.InvariantCulture)) return;
+            forcedBlack = true;
+            Pixelator.Instance.fade = 0f;
+            Plugin.Log.LogInfo("Harness: screen forced to black");
+        }
+
+        bool hostLowHpDone;
+        float hostHitAt;
+        int hostHits;
+
+        /// <summary>Harness host (GO_HOST_DIES=1): once the guest is a ghost, the host drops to half a heart and takes a
+        /// hit, so both players are down. Both machines must go to game over.</summary>
+        void HostDiesAfterGuest()
+        {
+            if (hostLowHpDone || System.Environment.GetEnvironmentVariable("GO_HOST_DIES") != "1") return;
+            if (!Session.NetSession.Active || !Session.NetSession.IsHost || Game.SceneObjects.InBreach) return;
+            var me = GameManager.Instance.PrimaryPlayer;
+            bool guestDown = false;
+            foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value && kv.Value.IsGhost) guestDown = true;
+            if (me == null || !guestDown || Time.realtimeSinceStartup < hostHitAt) return;
+            if (me.healthHaver.IsDead || hostHits >= 20) { hostLowHpDone = true; return; }
+            hostHitAt = Time.realtimeSinceStartup + 1f; hostHits++; // retried: a hit during i-frames does nothing
+            me.healthHaver.IsVulnerable = true; // the fight setup made both players invulnerable
+            me.healthHaver.Armor = 0f;
+            me.healthHaver.ForceSetCurrentHealth(0.5f);
+            me.healthHaver.ApplyDamage(0.5f, Vector2.zero, "harness", CoreDamageTypes.None, DamageCategory.Normal, true);
+            Plugin.Log.LogInfo($"Harness: host takes the last hit after the guest went down hp={me.healthHaver.GetCurrentHealth()} armor={me.healthHaver.Armor} vulnerable={me.healthHaver.IsVulnerable} dodge={me.IsDodgeRolling} invuln={me.healthHaver.PreventAllDamage}");
         }
 
         float buyAt = -1f;
@@ -515,6 +563,8 @@ namespace GungeonOnline.Dev
         void Update()
         {
             if (!DevEnv.IsHarness) return;
+            // The swap test crosses the title screen, where the rest of the harness update can throw: keep it apart.
+            try { SwapTest(Time.realtimeSinceStartup); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: swap step error " + e.Message); }
             try { HarnessUpdate(); }
             catch (System.Exception e)
             {
@@ -566,7 +616,7 @@ namespace GungeonOnline.Dev
                     var ws = Replication.WorldSync.Instance;
                     if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} localSuppressed={ws.LocalActorsSuppressed} spawnFail={ws.SpawnFailures} enemies={StaticReferenceManager.AllEnemies.Count}]";
                     var ps = Replication.ProjectileSync.Instance;
-                    if (ps != null) net += $" proj[announced={ps.Announced} updates={ps.Updates} copies={ps.Copies} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
+                    if (ps != null) net += $" proj[announced={ps.Announced} sent={ps.Sent} updates={ps.Updates} copies={ps.Copies} resent={ps.Resent} early={ps.EarlyDeaths} hitMe={ps.EarlyNearMe} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
                     var pk = Replication.PickupSync.Instance;
                     if (pk != null) net += $" pick[ann={pk.PickupsAnnounced} copies={pk.PickupsCopied} purged={pk.LocalPurged} req={pk.Requests} gives={pk.Gives} givesApplied={pk.GivesApplied} chests={pk.ChestsMapped} chestOpened={pk.ChestsOpened}]";
                     var ck = Replication.Checksum.Instance;
@@ -599,14 +649,17 @@ namespace GungeonOnline.Dev
                         var lob = HarmonyLib.Traverse.Create(gm.PrimaryPlayer).Field("m_disableInput").Field("m_overrides").GetValue<System.Collections.IList>();
                         string lk = "";
                         if (lob != null) foreach (var o in lob) lk += HarmonyLib.Traverse.Create(o).Field("key").GetValue<string>() + ";";
-                        tr += $" ov=[{lk}] raw={HarmonyLib.Traverse.Create(gm.PrimaryPlayer).Field("m_inputState").GetValue()}";
+                        var pp = gm.PrimaryPlayer;
+                        tr += $" ov=[{lk}] raw={HarmonyLib.Traverse.Create(pp).Field("m_inputState").GetValue()}" +
+                              $" fall={pp.IsFalling} cart={(bool)pp.currentMineCart} ghost={pp.IsGhost} dead={pp.healthHaver.IsDead} killcam={BossKillCam.BossDeathCamRunning}" +
+                              $" noPause={gm.PreventPausing} paused={gm.IsPaused} loading={gm.IsLoadingLevel} menu={Session.OnlineMenu.IsOpen} wd={Game.InputWatchdog.Restores}";
                     }
                     foreach (var kv in Game.PlayerSlots.Remotes)
                         if (kv.Value) tr += $" r{kv.Key}={kv.Value.transform.position.x:F2},{kv.Value.transform.position.y:F2} st={kv.Value.CurrentInputState} mv={BraveInput.GetInstanceForPlayer(kv.Value.PlayerIDX).ActiveActions.Move.Vector}";
                     Plugin.Log.LogInfo(tr);
                 }
             }
-            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Game.SceneObjects.InBreach && GameManager.Instance.AllPlayers.Length >= 2)
+            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Game.SceneObjects.InBreach && (GameManager.Instance.AllPlayers.Length >= 2 || (System.Environment.GetEnvironmentVariable("GO_SOLO_START") == "1" && GameManager.Instance.PrimaryPlayer != null)))
             {
                 if (bothSince < 0) bothSince = t;
                 if (t - bothSince >= DevEnv.StartRunAt)
@@ -622,7 +675,6 @@ namespace GungeonOnline.Dev
             StyleGallery(t);
             UiTour(t);
             DoorTest(t);
-            SwapTest(t);
             if (elevStep == 2 && GameManager.Instance.IsLoadingLevel) { elevStep = 3; Plugin.Log.LogInfo("Harness: elevator left, next floor loading"); }
             ElevatorTest(t);
             PitTest(t);
@@ -630,6 +682,10 @@ namespace GungeonOnline.Dev
             UiHooks(t);
             HostFightSetup(t);
             ClientLowHp();
+            HostDiesAfterGuest();
+            ForceBlack(Time.realtimeSinceStartup);
+            var rep = System.Environment.GetEnvironmentVariable("GO_SEND_REPORT_AT");
+            if (!reportSent && rep != null && Time.realtimeSinceStartup > float.Parse(rep, System.Globalization.CultureInfo.InvariantCulture)) { reportSent = true; Session.Reports.Save(); }
             ClientTestBuy(t);
             TimedShots(t);
             if (DevEnv.QuitAfter > 0 && t >= DevEnv.QuitAfter)

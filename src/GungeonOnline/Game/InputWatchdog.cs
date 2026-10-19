@@ -19,6 +19,29 @@ namespace GungeonOnline.Game
         static readonly System.Reflection.FieldInfo InputStateField = AccessTools.Field(typeof(PlayerController), "m_inputState");
         static readonly System.Reflection.FieldInfo DisableField = AccessTools.Field(typeof(PlayerController), "m_disableInput");
         float nextCheck;
+        float blackSince = -1f;
+        public static int ScreenRestores;
+
+        /// <summary>
+        /// A screen left fully faded to black while you have full control of your character (a fade whose fade-in
+        /// never came) is faded back in after 3 seconds. Fades that belong to something (loading, pause, menus, kill
+        /// cams, cutscenes, elevator rides) never get here because they take your control or pause the game.
+        /// </summary>
+        void CheckBlackScreen(PlayerController p, GameManager gm)
+        {
+            var px = Pixelator.Instance;
+            bool black = px != null && px.fade < 0.05f;
+            bool free = p.CurrentInputState == PlayerInputState.AllInput && !p.IsFalling && !p.healthHaver.IsDead
+                        && !BossKillCam.BossDeathCamRunning && !gm.PreventPausing && !gm.IsSelectingCharacter;
+            if (!black || !free) { blackSince = -1f; return; }
+            if (blackSince < 0) { blackSince = Time.realtimeSinceStartup; return; }
+            if (Time.realtimeSinceStartup - blackSince < 3f) return;
+            blackSince = -1f;
+            ScreenRestores++;
+            px.saturation = 1f;
+            px.FadeToBlack(0.5f, true);
+            Plugin.Log.LogWarning("InputWatchdog: the screen stayed black while you could move, faded it back in");
+        }
 
         void Update()
         {
@@ -28,7 +51,9 @@ namespace GungeonOnline.Game
             if (!NetSession.Active || !GameManager.HasInstance) { since = -1f; return; }
             var gm = GameManager.Instance;
             var p = PlayerSlots.Local;
-            if (p == null || gm.IsLoadingLevel || gm.IsPaused || OnlineMenu.IsOpen || SceneObjects.InBreach) { since = -1f; return; }
+            if (p == null || gm.IsLoadingLevel || gm.IsPaused || OnlineMenu.IsOpen) { since = -1f; blackSince = -1f; return; }
+            CheckBlackScreen(p, gm); // the Breach too
+            if (SceneObjects.InBreach) { since = -1f; return; }
             // A fall that never finishes (its coroutine was cut short) gets the game's own pit respawn after 10 s.
             if (p.IsFalling && !p.healthHaver.IsDead)
             {

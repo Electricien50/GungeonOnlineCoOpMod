@@ -33,6 +33,33 @@ namespace GungeonOnline.Net
 
         // Stats
         public float RttMs { get; private set; } = 100f;
+
+        // What players see: the median of the last 2 s of samples, refreshed twice a second and rounded to 5 ms. A
+        // single sample carries both machines' frame times and any hitch (a load, a busy room), so shown raw the
+        // number jumps around far more than the connection does. The netcode itself keeps using RttMs.
+        readonly float[] shownSamples = new float[64];
+        readonly double[] shownAt = new double[64];
+        int shownCount, shownNext;
+        double shownRefresh;
+        public float DisplayRttMs { get; private set; } = -1f;
+        public float DisplayJitterMs { get; private set; }
+
+        void AddShownSample(float sample, double now)
+        {
+            shownSamples[shownNext] = sample; shownAt[shownNext] = now;
+            shownNext = (shownNext + 1) % shownSamples.Length;
+            if (shownCount < shownSamples.Length) shownCount++;
+            if (now < shownRefresh && DisplayRttMs >= 0) return;
+            shownRefresh = now + 0.5;
+            var recent = new System.Collections.Generic.List<float>(shownCount);
+            for (int i = 0; i < shownCount; i++) if (now - shownAt[i] <= 2.0) recent.Add(shownSamples[i]);
+            if (recent.Count == 0) return;
+            recent.Sort();
+            float median = recent[recent.Count / 2];
+            DisplayRttMs = Math.Max(1f, (float)Math.Round(median / 5f) * 5f);
+            // Spread of the middle of the samples (ignores the odd hitch at either end).
+            DisplayJitterMs = recent[(recent.Count * 3) / 4] - recent[recent.Count / 4];
+        }
         public float RttVarMs { get; private set; } = 50f;
         public float LossPercent { get; private set; }
         public long BytesSent, BytesReceived, PacketsSent, PacketsReceived, Resends;
@@ -284,6 +311,7 @@ namespace GungeonOnline.Net
             float sample = (float)age;
             RttVarMs = 0.75f * RttVarMs + 0.25f * Math.Abs(sample - RttMs);
             RttMs = 0.875f * RttMs + 0.125f * sample;
+            AddShownSample(sample, now);
             // The packet arrived, but keep its reliable messages until the peer's running "delivered up to" count
             // passes them: if the peer could not use part of a packet, the message is still here to send again.
             foreach (var id in packetMessages[slot])

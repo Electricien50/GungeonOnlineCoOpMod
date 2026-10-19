@@ -287,7 +287,8 @@ namespace GungeonOnline.Session
                     Add("Back", Back);
                     break;
                 case Screen.SetHelp:
-                    Add("Save report", () => Reports.Save());
+                    Add("Send report", () => Reports.Save());
+                    Add("Check for updates: " + (NetConfig.CheckUpdates.Value ? "On" : "Off"), () => NetConfig.CheckUpdates.Value = !NetConfig.CheckUpdates.Value);
                     int sm = NetConfig.SmoothingMs.Value;
                     Add("Friend smoothing: " + (sm < 0 ? "Auto" : sm + " ms"), null, true,
                         d => NetConfig.SmoothingMs.Value = Mathf.Clamp(sm < 0 && d > 0 ? 0 : sm + d * 5, -1, 100));
@@ -617,7 +618,7 @@ namespace GungeonOnline.Session
                 string q = Quality(c, out var col);
                 string who = c.Tag as string;
                 if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = GungeonUI.CharacterName(Game.PlayerSlots.ForSlot(c.Slot)) + (NetSession.IsHost ? "" : " - host");
-                DrawPlayerRow(Game.PlayerSlots.ForSlot(c.Slot), who, q + "  " + Mathf.RoundToInt(c.RttMs) + " ms", col, cx, y);
+                DrawPlayerRow(Game.PlayerSlots.ForSlot(c.Slot), who, q + "  " + Mathf.RoundToInt(Shown(c)) + " ms", col, cx, y);
                 y += row;
             }
             return y + 4 * px;
@@ -664,7 +665,7 @@ namespace GungeonOnline.Session
             {
                 string q = Quality(c, out var col);
                 if (q == "Great") continue;
-                string text = $"Connection {q}: {c.RttMs:F0} ms, {c.LossPercent:F0}% loss";
+                string text = $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
                 col.a = alpha;
                 if (corner) GungeonUI.Text(text, new Vector2(8 * GungeonUI.Px, y), GungeonUI.Font.Small, col, scale);
                 else GungeonUI.TextCentered(text, UnityEngine.Screen.width / 2f, y, GungeonUI.Font.Small, col, scale);
@@ -683,9 +684,12 @@ namespace GungeonOnline.Session
             }
         }
 
+        static float Shown(Connection c) => c.DisplayRttMs >= 0 ? c.DisplayRttMs : c.RttMs;
+
         public static string Quality(Connection c, out Color color)
         {
-            float score = c.RttMs + c.RttVarMs * 2f + c.LossPercent * 20f;
+            float rtt = c.DisplayRttMs >= 0 ? c.DisplayRttMs : c.RttMs, jit = c.DisplayRttMs >= 0 ? c.DisplayJitterMs : c.RttVarMs;
+            float score = rtt + jit * 2f + c.LossPercent * 20f;
             if (score < 120) { color = new Color(0.45f, 0.9f, 0.45f); return "Great"; }
             if (score < 220) { color = new Color(0.95f, 0.85f, 0.35f); return "OK"; }
             color = new Color(0.95f, 0.4f, 0.35f); return "Poor";
@@ -707,7 +711,7 @@ namespace GungeonOnline.Session
                 style.normal.textColor = col;
                 string who = c.Tag as string;
                 if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = NetSession.IsHost ? "Your friend" : "Host";
-                GUI.Label(new Rect(x, y, w, lineH), $"{who}: connection {q} ({c.RttMs:F0} ms)", style);
+                GUI.Label(new Rect(x, y, w, lineH), $"{who}: connection {q} ({Shown(c):F0} ms)", style);
                 y += lineH * 0.9f;
             }
             return y + lineH * 0.3f;
@@ -724,7 +728,7 @@ namespace GungeonOnline.Session
                 if (q == "Great") continue;
                 var style = new GUIStyle(MenuStyle.Small) { alignment = TextAnchor.LowerLeft };
                 style.normal.textColor = col;
-                GUI.Label(new Rect(10, UnityEngine.Screen.height - 40, 600, 30), $"Connection {q}: {c.RttMs:F0} ms, {c.LossPercent:F0}% loss", style);
+                GUI.Label(new Rect(10, UnityEngine.Screen.height - 40, 600, 30), $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss", style);
             }
         }
     }
