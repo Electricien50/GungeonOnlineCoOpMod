@@ -32,6 +32,54 @@ Enter the Gungeon's co-op is couch co-op: one screen, one camera, and player two
   </tr>
 </table>
 
+## Install
+
+1. Download `GungeonOnline.zip` from [Releases](../../releases) and unzip it anywhere.
+2. Close the game and double-click **`Install Gungeon Online.bat`**. It finds Enter the Gungeon by itself (every Steam library, GOG, Epic) and installs BepInEx and the mod. If it can't find the game, it asks for the folder.
+3. To remove it later, double-click **`Uninstall Gungeon Online.bat`**.
+
+**Manual install (no .bat):**
+1. Unzip `GungeonOnline.zip`.
+2. Open your game folder, the one with `EtG.exe`. Steam: right-click Enter the Gungeon, Manage, Browse local files. GOG Galaxy: the game, Manage installation, Show folder.
+3. Copy everything inside the zip's `files` folder into the game folder (the `BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`).
+4. Start the game. To uninstall, delete `BepInEx/plugins/GungeonOnline` (or the whole `BepInEx` folder and `winhttp.dll`).
+
+Both players need the same version of the mod. The game tells you if they differ.
+
+## Play
+
+1. Start the game. Pause and pick **Play Online** (or hold **Back + Start**, or press **F8**).
+2. One player picks **Host**. The invite code is copied for you: send it to your friend.
+3. Your friend copies the code and picks **Join**.
+4. Each player picks a character in their own Breach. The host walks into the Gungeon when everyone is ready.
+
+If the join doesn't go through, your friend sends you their *reply code* and you pick *Let in friend*. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
+
+## Roadmap
+
+- **4-player support is in active development** and it is the next thing coming. The netcode was built for 4 from day one; today the game side supports 2.
+- **Free for all co-op style:** fight in different rooms at the same time.
+
+## FAQ
+
+**Does it use rollback netcode?**
+No. Rollback means rewinding and replaying the whole game every time a late input arrives. Enter the Gungeon wasn't built for that: thousands of unseeded random rolls and coroutines would make two games drift apart. Enter The Gungeon Online Co-Op Mod uses host-authoritative netcode with local prediction instead. Your own character has zero added input delay (the same benefit rollback gives you), and the game cannot desync. Full rollback is being researched as a separate, later project.
+
+**What about latency to my friend?**
+Your own character is never delayed. Your friend's character, the enemies and the bullets show up about half your ping behind. The mod's own work costs about 0.2 ms per frame on the host.
+
+**Can more than 2 people play?**
+Not yet. Enter the Gungeon itself supports two players. The netcode is written for more (a slot array and star topology), and 3 to 4 players is on the roadmap.
+
+**Does it work on Steam Deck / Linux?**
+Not tested yet.
+
+**Do I need to own the game?**
+Yes. Nothing from the game is included. Each player needs their own copy.
+
+**Will it touch my saves?**
+Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
+
 ## Why it feels good
 
 ### Independent cameras
@@ -94,55 +142,6 @@ A lot of online mods feel great for twenty minutes and then the two games quietl
     <td align="center"><sub>Friend off screen? A small tag at the edge points the way.</sub></td>
   </tr>
 </table>
-
-## Roadmap
-
-- **4-player support is in active development** and it is the next thing coming. The netcode was built for 4 from day one; today the game side supports 2.
-- **Free for all co-op style:** fight in different rooms at the same time.
-- More scripted moments covered online (Pasts, secret floors, rarer synergies).
-
-## Install
-
-1. Download `GungeonOnline.zip` from [Releases](../../releases) and unzip it anywhere.
-2. Close the game and double-click **`Install Gungeon Online.bat`**. It finds Enter the Gungeon by itself (every Steam library, GOG, Epic) and installs BepInEx and the mod. If it can't find the game, it asks for the folder.
-3. To remove it later, double-click **`Uninstall Gungeon Online.bat`**.
-
-**Manual install (no .bat):**
-1. Unzip `GungeonOnline.zip`.
-2. Open your game folder, the one with `EtG.exe`. Steam: right-click Enter the Gungeon, Manage, Browse local files. GOG Galaxy: the game, Manage installation, Show folder.
-3. Copy everything inside the zip's `files` folder into the game folder (the `BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`).
-4. Start the game. To uninstall, delete `BepInEx/plugins/GungeonOnline` (or the whole `BepInEx` folder and `winhttp.dll`).
-
-Both players need the same version of the mod. The game tells you if they differ.
-
-## Play
-
-1. Start the game. Pause and pick **Play Online** (or hold **Back + Start**, or press **F8**).
-2. One player picks **Host**. The invite code is copied for you: send it to your friend.
-3. Your friend copies the code and picks **Join**.
-4. Each player picks a character in their own Breach. The host walks into the Gungeon when everyone is ready.
-
-If the join doesn't go through, your friend sends you their *reply code* and you pick *Let in friend*. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
-
-## FAQ
-
-**Does it use rollback netcode?**
-No. Rollback means rewinding and replaying the whole game every time a late input arrives. Enter the Gungeon wasn't built for that: thousands of unseeded random rolls and coroutines would make two games drift apart. Enter The Gungeon Online Co-Op Mod uses host-authoritative netcode with local prediction instead. Your own character has zero added input delay (the same benefit rollback gives you), and the game cannot desync. Full rollback is being researched as a separate, later project.
-
-**What about latency to my friend?**
-Your own character is never delayed. Your friend's character, the enemies and the bullets show up about half your ping behind. The mod's own work costs about 0.2 ms per frame on the host.
-
-**Can more than 2 people play?**
-Not yet. Enter the Gungeon itself supports two players. The netcode is written for more (a slot array and star topology), and 3 to 4 players is on the roadmap.
-
-**Does it work on Steam Deck / Linux?**
-Not tested yet.
-
-**Do I need to own the game?**
-Yes. Nothing from the game is included. Each player needs their own copy.
-
-**Will it touch my saves?**
-Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
 
 ## How it plays differently from couch co-op
 
