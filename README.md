@@ -54,7 +54,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 <table>
   <tr>
-    <td><img src="docs/media/pause-entry.png" alt="Play Online in the pause menu"></td>
+    <td><img src="docs/media/pause-menu-entry.png" alt="Play Online in the pause menu"></td>
     <td><img src="docs/media/hosting.png" alt="Hosting with an invite code"></td>
   </tr>
   <tr>
