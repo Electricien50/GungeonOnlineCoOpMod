@@ -57,6 +57,8 @@ namespace GungeonOnline.Session
                 if (s.InviteCodeText != null && GUILayout.Button("Copy code")) GUIUtility.systemCopyBuffer = s.InviteCodeText;
                 if (s.Upnp != null)
                     GUILayout.Label("Router port forwarding: " + s.Upnp.Status + (s.Upnp.Status == UpnpMapper.State.Failed ? " (" + s.Upnp.Error + ")" : ""));
+                if (NetSession.IsHost && s.SteamReady && GUILayout.Button("Invite a Steam friend"))
+                    s.InviteSteamFriend();
                 if (NetSession.IsHost)
                 {
                     GUILayout.Label("If a friend cannot get in, paste their reply code here:");

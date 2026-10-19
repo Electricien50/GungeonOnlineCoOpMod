@@ -145,3 +145,38 @@ namespace GungeonOnline.Net
         public void Dispose() => inner.Dispose();
     }
 }
+
+namespace GungeonOnline.Net
+{
+    /// <summary>
+    /// Several sockets behind one: receives from all, sends through whichever owns the address type.
+    /// Lets one host accept Steam friends (Steam P2P) and GOG/Epic players (UDP) in the same session.
+    /// </summary>
+    public sealed class CompositeSocket : IDatagramSocket
+    {
+        readonly IDatagramSocket[] parts;
+        readonly System.Func<System.Net.EndPoint, int> route;
+
+        public CompositeSocket(System.Func<System.Net.EndPoint, int> route, params IDatagramSocket[] parts)
+        {
+            this.parts = parts; this.route = route;
+        }
+
+        public System.Net.EndPoint LocalEndPoint => parts[0].LocalEndPoint;
+
+        public void SendTo(System.Net.EndPoint to, byte[] buf, int len) => parts[route(to)].SendTo(to, buf, len);
+
+        public bool TryReceive(out System.Net.EndPoint from, out byte[] data)
+        {
+            foreach (var p in parts)
+                if (p.TryReceive(out from, out data)) return true;
+            from = null; data = null;
+            return false;
+        }
+
+        public void Dispose()
+        {
+            foreach (var p in parts) p.Dispose();
+        }
+    }
+}

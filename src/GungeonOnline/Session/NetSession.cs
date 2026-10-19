@@ -32,6 +32,9 @@ namespace GungeonOnline.Session
 
         NetNode node;
         StunClient stun;
+        SteamLobby steam;
+        bool steamInitTried;
+        System.Net.EndPoint steamHost;
         UpnpMapper upnp;
         public string Status = "Offline";
         public string InviteCodeText;
@@ -42,6 +45,8 @@ namespace GungeonOnline.Session
         public NetNode Node => node;
         public StunClient Stun => stun;
         public UpnpMapper Upnp => upnp;
+        public bool SteamReady => steam != null;
+        public void InviteSteamFriend() => steam?.Invite();
 
         readonly Dictionary<Channel, Action<Connection, byte[], Delivery>> handlers = new Dictionary<Channel, Action<Connection, byte[], Delivery>>();
         public event Action<Connection> PeerJoined;
@@ -79,9 +84,14 @@ namespace GungeonOnline.Session
 
         Handshake MakeHandshake() => new Handshake { ModVersion = Plugin.Version, GameHash = GameHash, PlayerName = NetConfig.PlayerName.Value };
 
-        IDatagramSocket MakeSocket(int port)
+        IDatagramSocket MakeSocket(int port, bool withSteam)
         {
             IDatagramSocket s = new UdpDatagramSocket(port);
+            if (withSteam && steam != null)
+            {
+                var steamSock = new SteamDatagramSocket(id => node != null && (node.IsHost || (steamHost is SteamEndPoint h && h.Id == id)));
+                s = new CompositeSocket(ep => ep is SteamEndPoint ? 1 : 0, s, steamSock);
+            }
             float lat = EnvF("GO_SIM_LAT"), jit = EnvF("GO_SIM_JIT"), loss = EnvF("GO_SIM_LOSS");
             if (lat > 0 || jit > 0 || loss > 0)
             {
@@ -104,7 +114,8 @@ namespace GungeonOnline.Session
             try
             {
                 int port = Dev.DevEnv.PortOverride ?? NetConfig.Port.Value;
-                node = new NetNode(MakeSocket(port), true, NetConfig.MaxPlayers.Value, MakeHandshake());
+                node = new NetNode(MakeSocket(port, withSteam: true), true, NetConfig.MaxPlayers.Value, MakeHandshake());
+                steam?.Host(NetConfig.MaxPlayers.Value);
                 Wire();
                 StartStun();
                 if (NetConfig.UseUpnp.Value && !Dev.DevEnv.IsHarness)
@@ -126,7 +137,7 @@ namespace GungeonOnline.Session
             if (!InviteCode.TryParse(code, out var ep)) { LastError = "That code is not valid."; return; }
             try
             {
-                node = new NetNode(MakeSocket(Dev.DevEnv.PortOverride ?? 0), false, NetConfig.MaxPlayers.Value, MakeHandshake());
+                node = new NetNode(MakeSocket(Dev.DevEnv.PortOverride ?? 0, withSteam: false), false, NetConfig.MaxPlayers.Value, MakeHandshake());
                 Wire();
                 StartStun();
                 node.Connect(ep, Now);
@@ -147,6 +158,23 @@ namespace GungeonOnline.Session
             if (!InviteCode.TryParse(code, out var ep)) { LastError = "That code is not valid."; return; }
             AddPunch(ep);
             Plugin.Log.LogInfo("Punching toward " + ep);
+        }
+
+        /// <summary>Accepted a Steam invite: connect to the lobby owner over Steam P2P.</summary>
+        void JoinSteam(Steamworks.CSteamID owner)
+        {
+            if (Active) Leave("joining another session");
+            try
+            {
+                steamHost = new SteamEndPoint(owner);
+                node = new NetNode(MakeSocket(Dev.DevEnv.PortOverride ?? 0, withSteam: true), false, NetConfig.MaxPlayers.Value, MakeHandshake());
+                Wire();
+                node.Connect(steamHost, Now);
+                Status = "Joining Steam friend";
+                Game.BackgroundRun.SessionActive = true;
+                Game.BackgroundRun.Refresh();
+            }
+            catch (Exception e) { Fail("Could not join over Steam: " + e.Message); }
         }
 
         void AddPunch(IPEndPoint ep) => punchTargets.Add(new KeyValuePair<IPEndPoint, double>(ep, Now + 8.0));
@@ -191,6 +219,19 @@ namespace GungeonOnline.Session
 
         void Update()
         {
+            if (!steamInitTried && Time.frameCount > 30)
+            {
+                steamInitTried = true;
+                if (SteamLobby.Available)
+                {
+                    steam = new SteamLobby();
+                    steam.Init();
+                    steam.JoinHost += JoinSteam;
+                    if (NetConfig.PlayerName.Value == "Gungeoneer")
+                        try { NetConfig.PlayerName.Value = Steamworks.SteamFriends.GetPersonaName(); } catch { }
+                    Plugin.Log.LogInfo("Steam available: invites enabled");
+                }
+            }
             if (node == null) return;
             double now = Now;
             node.Poll(now);
@@ -223,6 +264,8 @@ namespace GungeonOnline.Session
             node = null;
             try { n.Dispose(); } catch { }
             upnp?.Unmap();
+            steam?.Leave();
+            steamHost = null;
             upnp = null;
             stun = null;
             InviteCodeText = null;
