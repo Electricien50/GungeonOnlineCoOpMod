@@ -73,7 +73,7 @@ namespace GungeonOnline.Dev
                 float d = (e.CenterPosition - me.CenterPosition).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = e; }
             }
-            if (best == null) return f;
+            if (best == null) return Loot(me, t);
             var to = (best.CenterPosition - me.CenterPosition).normalized;
             f.Aim = to;
             botPhase += Time.deltaTime;
@@ -82,6 +82,35 @@ namespace GungeonOnline.Dev
             float dist = Mathf.Sqrt(bestD);
             f.Move = (strafe + (dist > 6f ? to : dist < 3f ? -to : Vector2.zero)).normalized;
             if (Mathf.Repeat(t, 4f) < 0.02f) f.Set(NetButton.DodgeRoll, true);
+            return f;
+        }
+
+        /// <summary>Room clear: walk to the nearest item or closed chest in this room and interact.</summary>
+        static InputFrame Loot(PlayerController me, float t)
+        {
+            var f = new InputFrame();
+            Vector2? target = null;
+            float bestD = 1e9f;
+            foreach (var p in UnityEngine.Object.FindObjectsOfType<PickupObject>())
+            {
+                if (!p || p.transform.parent != null || !p.gameObject.activeInHierarchy || p.IsBeingSold) continue;
+                Vector2 pos = p.transform.position;
+                if (pos.GetAbsoluteRoom() != me.CurrentRoom) continue;
+                float d = (pos - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; target = pos + new Vector2(0.5f, 0.5f); }
+            }
+            foreach (var ch in StaticReferenceManager.AllChests)
+            {
+                if (!ch || ch.IsOpen || ch.IsBroken) continue;
+                Vector2 pos = ch.transform.position;
+                if (pos.GetAbsoluteRoom() != me.CurrentRoom) continue;
+                float d = (pos - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; target = pos + new Vector2(1f, 0.5f); }
+            }
+            if (target == null) return f;
+            var delta = target.Value - me.CenterPosition;
+            if (delta.magnitude > 1.0f) f.Move = delta.normalized;
+            f.Set(NetButton.Interact, Mathf.Repeat(t, 0.5f) < 0.1f);
             return f;
         }
 

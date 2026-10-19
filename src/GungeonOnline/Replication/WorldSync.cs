@@ -282,6 +282,7 @@ namespace GungeonOnline.Replication
         public void OnFloorUnloading()
         {
             FloorReady = false;
+            PickupSync.Instance?.OnFloorChanged();
             replicas.Clear();
             if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); }
         }
@@ -289,10 +290,21 @@ namespace GungeonOnline.Replication
         void OnEvent(Connection c, byte[] data, Delivery d)
         {
             if (data.Length == 0) return;
+            if (data[0] >= 50 && data[0] < 60)
+            {
+                if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
+                var pr = new WireReader(data, 1, data.Length - 1);
+                PickupSync.Instance?.Apply(c, data[0], ref pr);
+                return;
+            }
             if (data[0] >= 40 && data[0] < 50)
             {
                 var vr = new WireReader(data, 1, data.Length - 1);
-                try { VitalsSync.Instance?.Apply(c, data[0], ref vr); }
+                try
+                {
+                    if (data[0] == 45) { if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; } InventorySync.Instance?.Apply(ref vr); }
+                    else VitalsSync.Instance?.Apply(c, data[0], ref vr);
+                }
                 catch (System.Exception e) { Plugin.Log.LogError("Vitals: " + e); }
                 return;
             }
@@ -307,7 +319,9 @@ namespace GungeonOnline.Replication
                             c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
                     foreach (var room in GameManager.Instance.Dungeon.data.rooms)
                         if (room.IsSealed) { w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(true); c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered); }
-                    Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready, sent {NetIds.Dead().Count == 0} world");
+                    PickupSync.Instance?.SendAllTo(c);
+                    InventorySync.Instance?.ForceResend();
+                    Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready");
                 }
                 return;
             }
@@ -323,6 +337,8 @@ namespace GungeonOnline.Replication
             try
             {
                 if (type >= 20 && type < 30) { ProjectileSync.Instance?.Apply(type, ref r); return; }
+                if (type == 45) { var ir = new WireReader(data, 1, data.Length - 1); InventorySync.Instance?.Apply(ref ir); return; }
+                if (type >= 50 && type < 60) { ApplyingHost = false; var pr = new WireReader(data, 1, data.Length - 1); PickupSync.Instance?.Apply(null, type, ref pr); return; }
                 switch (type)
                 {
                     case EvSpawn: ApplySpawn(ref r); break;

@@ -140,9 +140,15 @@ namespace GungeonOnline.Dev
                     if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} enemies={StaticReferenceManager.AllEnemies.Count}]";
                     var ps = Replication.ProjectileSync.Instance;
                     if (ps != null) net += $" proj[announced={ps.Announced} updates={ps.Updates} copies={ps.Copies} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
+                    var pk = Replication.PickupSync.Instance;
+                    if (pk != null) net += $" pick[ann={pk.PickupsAnnounced} copies={pk.PickupsCopied} purged={pk.LocalPurged} req={pk.Requests} gives={pk.Gives} givesApplied={pk.GivesApplied} chests={pk.ChestsMapped} chestOpened={pk.ChestsOpened}]";
+                    var inv = Replication.InventorySync.Instance;
+                    if (inv != null) net += $" inv[sent={inv.Sent} applied={inv.Applied} added={inv.Added} removed={inv.Removed}]";
                     var vs = Replication.VitalsSync.Instance;
                     if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied}]";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" hpR{kv.Key}={kv.Value.healthHaver.GetCurrentHealth()}";
+                    if (gm.PrimaryPlayer != null) net += $" money={gm.PrimaryPlayer.carriedConsumables.Currency} guns={gm.PrimaryPlayer.inventory.AllGuns.Count} passives={gm.PrimaryPlayer.passiveItems.Count}";
+                    foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" R{kv.Key}guns={kv.Value.inventory.AllGuns.Count} R{kv.Key}passives={kv.Value.passiveItems.Count}";
                     net += $" hp0={(gm.PrimaryPlayer != null ? gm.PrimaryPlayer.healthHaver.GetCurrentHealth() : -1)}";
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
