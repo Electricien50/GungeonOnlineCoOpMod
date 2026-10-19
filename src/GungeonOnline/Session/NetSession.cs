@@ -212,7 +212,10 @@ namespace GungeonOnline.Session
             };
         }
 
-        void EarlyPoll()
+        void EarlyPoll() => PollNow();
+
+        /// <summary>Drain the network now. Safe to call several times per frame.</summary>
+        public void PollNow()
         {
             if (node != null) node.Poll(Now);
         }

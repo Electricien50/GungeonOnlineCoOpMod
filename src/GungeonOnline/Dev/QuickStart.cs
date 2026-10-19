@@ -25,8 +25,8 @@ namespace GungeonOnline.Dev
             FoyerCharacterSelectFlag pick = null;
             while (Time.realtimeSinceStartup < giveUp)
             {
-                if (Foyer.Instance != null && GameManager.HasInstance && GameManager.Instance.IsSelectingCharacter &&
-                    GameManager.Instance.PrimaryPlayer == null)
+                // Do not wait on IsSelectingCharacter: at high frame rates it can flip before this loop sees it.
+                if (Foyer.Instance != null && GameManager.HasInstance && GameManager.Instance.PrimaryPlayer == null)
                 {
                     foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>())
                         if (!f.IsCoopCharacter && !f.IsAlternateCostume && f.CharacterPrefabPath != null &&
@@ -37,7 +37,9 @@ namespace GungeonOnline.Dev
                 yield return null;
             }
             if (pick == null) { Plugin.Log.LogWarning("QuickStart: character flag not found: " + want); yield break; }
+            Plugin.Log.LogInfo("QuickStart: found flag, selecting shortly");
             yield return new WaitForSeconds(1f);
+            if (GameManager.Instance.PrimaryPlayer != null) { Plugin.Log.LogInfo("QuickStart: player already chosen"); ScenarioRunner.Begin(); yield break; }
             Plugin.Log.LogInfo("QuickStart: selecting " + pick.CharacterPrefabPath);
             Foyer.Instance.StartCoroutine(Foyer.Instance.OnSelectedCharacter(0.05f, pick));
             while (GameManager.Instance.PrimaryPlayer == null) yield return null;

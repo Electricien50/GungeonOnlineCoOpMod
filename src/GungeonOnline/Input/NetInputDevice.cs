@@ -17,6 +17,8 @@ namespace GungeonOnline.Input
             Slot = slot;
             DeviceClass = InputDeviceClass.Controller;
             DeviceStyle = InputDeviceStyle.XboxOne;
+            // Never becomes InControl's "active device": the local player must not pick up remote input.
+            Passive = true;
             foreach (var t in new[]
             {
                 InputControlType.LeftStickLeft, InputControlType.LeftStickRight, InputControlType.LeftStickUp, InputControlType.LeftStickDown,

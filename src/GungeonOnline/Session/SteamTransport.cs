@@ -74,11 +74,19 @@ namespace GungeonOnline.Session
     /// </summary>
     internal sealed class SteamLobby
     {
+        /// <summary>
+        /// True only when the game itself already started Steam. Never touches SteamManager.Instance: on the GOG
+        /// build that getter creates a manager which fails to find the Steam DLL and quits the game.
+        /// </summary>
         public static bool Available
         {
             get
             {
-                try { return SteamManager.Initialized; }
+                try
+                {
+                    var inst = HarmonyLib.Traverse.Create(typeof(SteamManager)).Field("s_instance").GetValue<SteamManager>();
+                    return inst != null && HarmonyLib.Traverse.Create(inst).Field("m_bInitialized").GetValue<bool>();
+                }
                 catch { return false; }
             }
         }

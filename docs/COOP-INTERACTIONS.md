@@ -17,7 +17,7 @@ local co-op, so its gameplay result is already correct. What needs netplay-aware
 |---|---|---|
 | Camera | One camera averages both players (`CameraController.GetCoreCurrentBasePosition`) | Each machine follows only its own player (`IgnoredByCamera` on everyone else) |
 | Partner pulled into fights | `HandleCoopSpecificTimers` warps the outside player into a sealed room after 1 s | Off. Doors stay shut for the outside player. Second-fight lock: while a room is sealed, other uncleared rooms do not start |
-| Off-screen clamp | Player pushed/warped back inside the shared camera (PlayerController.Update, ghost block) | Off |
+| Off-screen clamp | `CameraBoundsMovementRestrictor` blocks movement past the shared camera edge; ghosts are also pushed/warped back | Off (found in M2: it pinned the other player to the edge of each screen) |
 | Pause menu | `GameManager.PauseRaw` sets time scale 0 for the whole world | Opens locally, world keeps running, banner "game is still running". Config option `PauseFreezesEveryone` (default off) |
 | Ammonomicon, map | Local UI | Local UI on the machine that opened it; world keeps running |
 | NPC dialogue, shops, shrines, crest doors, Ark, etc. (≈40 scripts call `SetInputOverride` on the other player) | Freezes **both** players and moves the shared camera | Freezes only the player who interacted. Camera moves only on that player's screen. The partner keeps playing |

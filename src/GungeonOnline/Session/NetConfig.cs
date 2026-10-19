@@ -14,7 +14,8 @@ namespace GungeonOnline.Session
         public static ConfigEntry<KeyCode> OverlayKey;
         public static ConfigEntry<bool> PauseFreezesEveryone;
         public static ConfigEntry<bool> SecondFightLock;
-        public static ConfigEntry<int> InterpolationSnapshots;
+        public static ConfigEntry<int> SmoothingMs;
+        public static ConfigEntry<float> CorrectionSpeed;
 
         public static void Bind(ConfigFile c)
         {
@@ -26,7 +27,12 @@ namespace GungeonOnline.Session
             OverlayKey = c.Bind("Interface", "OverlayKey", KeyCode.F8, "Opens the Gungeon Online window.");
             PauseFreezesEveryone = c.Bind("Gameplay", "PauseFreezesEveryone", false, "Host only: pausing stops the game for all players.");
             SecondFightLock = c.Bind("Gameplay", "SecondFightLock", true, "While one room is in combat, other uncleared rooms stay shut.");
-            InterpolationSnapshots = c.Bind("Network", "InterpolationSnapshots", 0, new ConfigDescription("Extra snapshots of buffering for other players and enemies. 0 = lowest latency.", new AcceptableValueRange<int>(0, 3)));
+            SmoothingMs = c.Bind("Network", "OtherPlayerSmoothingMs", -1, new ConfigDescription(
+                "Buffer for other players' input, in ms. -1 = Auto (sized from measured jitter, recommended). 0 = lowest latency, may stutter on a jittery link. Your own character is never delayed.",
+                new AcceptableValueRange<int>(-1, 100)));
+            CorrectionSpeed = c.Bind("Network", "CorrectionSpeed", 0.25f, new ConfigDescription(
+                "How fast small position differences from the host are blended out per frame. Lower = smoother, higher = tighter.",
+                new AcceptableValueRange<float>(0.05f, 1f)));
         }
     }
 }

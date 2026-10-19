@@ -37,6 +37,14 @@ namespace GungeonOnline.Session
             return sb.ToString();
         }
 
+        static string AutoInfo()
+        {
+            var inst = Replication.InputSync.Instance;
+            if (inst == null) return "";
+            foreach (var kv in inst.Streams) return $"  (now {kv.Value.BufferMs:F0} ms, jitter {kv.Value.JitterMs:F0} ms)";
+            return "";
+        }
+
         void Draw(NetSession s)
         {
             GUILayout.Label("Status: " + s.Status);
@@ -71,6 +79,21 @@ namespace GungeonOnline.Session
                 if (s.Node != null)
                     foreach (var c in s.Node.Connections)
                         GUILayout.Label($"  P{c.Slot + 1} {c.Tag ?? "host"}  ping {c.RttMs:F0} ms  jitter {c.RttVarMs:F0} ms  loss {c.LossPercent:F1}%");
+                GUILayout.Space(6);
+                GUILayout.Label("Netcode tuning (defaults are recommended):");
+                int sm = NetConfig.SmoothingMs.Value;
+                GUILayout.Label("Other player smoothing: " + (sm < 0 ? "Auto" : sm + " ms") + AutoInfo());
+                int nsm = Mathf.RoundToInt(GUILayout.HorizontalSlider(sm, -1, 100));
+                if (nsm != sm) NetConfig.SmoothingMs.Value = nsm;
+                float cs = NetConfig.CorrectionSpeed.Value;
+                GUILayout.Label($"Correction speed: {cs:F2}");
+                float ncs = GUILayout.HorizontalSlider(cs, 0.05f, 1f);
+                if (Mathf.Abs(ncs - cs) > 0.005f) NetConfig.CorrectionSpeed.Value = ncs;
+                if (GUILayout.Button("Reset to defaults"))
+                {
+                    NetConfig.SmoothingMs.Value = (int)NetConfig.SmoothingMs.DefaultValue;
+                    NetConfig.CorrectionSpeed.Value = (float)NetConfig.CorrectionSpeed.DefaultValue;
+                }
                 if (GUILayout.Button("Leave session")) s.Leave("left");
             }
             GUI.DragWindow();

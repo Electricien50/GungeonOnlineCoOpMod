@@ -19,6 +19,8 @@ namespace GungeonOnline.Dev
 
         /// <summary>GO_PORT: UDP port override so several instances can host or join on one machine.</summary>
         public static int? PortOverride;
+        /// <summary>GO_FPS: frame rate cap for the instance (players run uncapped; tests pick 60, 200, 240...).</summary>
+        public static int Fps = 60;
 
         public static bool IsHarness => !string.IsNullOrEmpty(SaveDir);
 
@@ -29,6 +31,7 @@ namespace GungeonOnline.Dev
             Script = Get("GO_SCRIPT");
             Auto = Get("GO_AUTO");
             if (int.TryParse(Get("GO_PORT") ?? "", out var port)) PortOverride = port;
+            if (int.TryParse(Get("GO_FPS") ?? "", out var fps) && fps > 0) Fps = fps;
             var q = Get("GO_QUIT_AFTER");
             if (q != null && float.TryParse(q, NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) QuitAfter = f;
         }

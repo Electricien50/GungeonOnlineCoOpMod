@@ -25,10 +25,14 @@ namespace GungeonOnline
             Dev.SaveIsolation.Apply(harmony);
             Game.BackgroundRun.Install(harmony);
             Input.InputPump.Install(harmony);
+            Camera.IndependentCamera.Install(harmony);
             Dev.QuickStart.Prepare();
             Log.LogInfo($"{Name} {Version} loaded. game={Session.NetSession.GameHash} dev={Dev.DevEnv.Summary()}");
             gameObject.AddComponent<Session.NetSession>();
             gameObject.AddComponent<Session.Overlay>();
+            gameObject.AddComponent<Session.Lobby>();
+            gameObject.AddComponent<Replication.InputSync>();
+            gameObject.AddComponent<Replication.PlayerSync>();
             gameObject.AddComponent<Dev.DevRunner>();
             StartCoroutine(Dev.QuickStart.Run());
             Dev.AutoSession.Begin();

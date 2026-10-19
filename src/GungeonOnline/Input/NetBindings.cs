@@ -35,9 +35,14 @@ namespace GungeonOnline.Input
             return list;
         }
 
+        static readonly HarmonyLib.AccessTools.FieldRef<PlayerAction, List<BindingSourceType>> ignored =
+            HarmonyLib.AccessTools.FieldRefAccess<PlayerAction, List<BindingSourceType>>("m_ignoredBindingSources");
+
         internal const InputControlType SelectDownControl = InputControlType.DPadDown;
 
         static readonly Dictionary<string, System.Reflection.FieldInfo> fields = new Dictionary<string, System.Reflection.FieldInfo>();
+
+        internal static PlayerAction Action(GungeonActions a, string name) => Get(a, name);
 
         static PlayerAction Get(GungeonActions a, string name)
         {
@@ -51,6 +56,9 @@ namespace GungeonOnline.Input
             var act = Get(a, name);
             if (act == null) { Plugin.Log.LogWarning("NetBindings: no action " + name); return; }
             act.ClearBindings();
+            // The game tells non-primary action sets to ignore controller bindings when it thinks no pad is
+            // assigned; this set is driven by a virtual pad, so lift that.
+            ignored(act).Clear();
             act.AddBinding(new DeviceBindingSource(c));
         }
 
