@@ -8,6 +8,7 @@ namespace GungeonOnline.Dev
     {
         float nextStatus;
         bool suspended;
+        float bothSince = -1f;
 
         /// <summary>Test instances are always silent: Wwise volumes forced to 0 every frame, engine suspended once it is up.</summary>
         void Mute()
@@ -25,6 +26,65 @@ namespace GungeonOnline.Dev
                 }
             }
             catch { }
+        }
+
+        System.Collections.Generic.List<float> shots;
+
+        /// <summary>GO_SHOTS="30,45": screenshots at those seconds since boot, saved as shot-30.png etc.</summary>
+        void TimedShots(float t)
+        {
+            if (shots == null)
+            {
+                shots = new System.Collections.Generic.List<float>();
+                var v = System.Environment.GetEnvironmentVariable("GO_SHOTS");
+                if (v != null) foreach (var x in v.Split(',')) if (float.TryParse(x, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f)) shots.Add(f);
+            }
+            for (int i = shots.Count - 1; i >= 0; i--)
+            {
+                if (t < shots[i]) continue;
+                var dir = System.Environment.GetEnvironmentVariable("GO_RUN_DIR") ?? ".";
+                ScreenCapture.CaptureScreenshot(Path.Combine(dir, "shot-" + Mathf.RoundToInt(shots[i]) + ".png"));
+                Plugin.Log.LogInfo("Harness: screenshot at " + shots[i]);
+                shots.RemoveAt(i);
+            }
+        }
+
+        float fightAt = -1f;
+        bool fightDone;
+
+        /// <summary>
+        /// Harness host only (GO_FIGHT=together|split): once the client is ready on floor 1, make players
+        /// invulnerable and warp them into rooms that still have enemies.
+        /// </summary>
+        void HostFightSetup(float t)
+        {
+            string mode = System.Environment.GetEnvironmentVariable("GO_FIGHT");
+            if (fightDone || mode == null || !Session.NetSession.IsHost) return;
+            var ws = Replication.WorldSync.Instance;
+            var gm = GameManager.Instance;
+            if (ws == null || ws.ReadyPeers == 0 || gm.Dungeon == null || Foyer.Instance != null) return;
+            if (fightAt < 0) { fightAt = t + 3f; return; }
+            if (t < fightAt) return;
+            fightDone = true;
+            var rooms = new System.Collections.Generic.List<Dungeonator.RoomHandler>();
+            foreach (var room in gm.Dungeon.data.rooms)
+            {
+                var list = room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear);
+                if (list != null && list.Count >= 2 && room != gm.Dungeon.data.Entrance) rooms.Add(room);
+            }
+            rooms.Sort((x, y) => x.distanceFromEntrance.CompareTo(y.distanceFromEntrance));
+            if (rooms.Count == 0) { Plugin.Log.LogWarning("Harness: no fight room"); return; }
+            int i = 0;
+            foreach (var p in gm.AllPlayers)
+            {
+                if (!p) continue;
+                p.healthHaver.IsVulnerable = false;
+                var room = rooms[Mathf.Min(mode == "split" ? i : 0, rooms.Count - 1)];
+                var spot = room.GetCenteredVisibleClearSpot(2, 2);
+                p.WarpToPoint(spot.ToVector2() + new Vector2(0.5f + i, 0.5f));
+                Plugin.Log.LogInfo($"Harness: warped player {p.PlayerIDX} into {room.GetRoomName()} ({room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear).Count} enemies)");
+                i++;
+            }
         }
 
         void Awake()
@@ -76,9 +136,12 @@ namespace GungeonOnline.Dev
                     }
                     var lb = BraveInput.GetInstanceForPlayer(0);
                     if (lb != null && lb.ActiveActions != null) net += $" localMove={lb.ActiveActions.Move.Vector} localSeq={Replication.InputSync.Instance.LocalSeq}";
+                    var ws = Replication.WorldSync.Instance;
+                    if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} enemies={StaticReferenceManager.AllEnemies.Count}]";
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
-                string line = $"t={t:F1} frame={Time.frameCount} scene={scene} gm={gm != null} players={players} p0={pos} net={net}";
+                string fp = Game.RunSync.Instance != null ? Game.RunSync.Instance.LastFingerprint : "-";
+                string line = $"t={t:F1} frame={Time.frameCount} scene={scene} floor=[{fp}] gm={gm != null} players={players} p0={pos} net={net}";
                 try { File.WriteAllText(DevEnv.StatusFile, line); } catch { }
                 if (Session.NetSession.Active && gm != null && gm.PrimaryPlayer != null)
                 {
@@ -88,6 +151,20 @@ namespace GungeonOnline.Dev
                     Plugin.Log.LogInfo(tr);
                 }
             }
+            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Foyer.Instance != null && GameManager.Instance.AllPlayers.Length >= 2)
+            {
+                if (bothSince < 0) bothSince = t;
+                if (t - bothSince >= DevEnv.StartRunAt)
+                {
+                    DevEnv.StartRunAt = -1f;
+                    Plugin.Log.LogInfo("Harness: host leaving the Breach");
+                    Pixelator.Instance.FadeToBlack(0.5f);
+                    GameManager.Instance.DelayedLoadNextLevel(0.75f);
+                    Foyer.Instance.OnDepartedFoyer();
+                }
+            }
+            HostFightSetup(t);
+            TimedShots(t);
             if (DevEnv.QuitAfter > 0 && t >= DevEnv.QuitAfter)
             {
                 Plugin.Log.LogInfo("GO_QUIT_AFTER reached, quitting.");

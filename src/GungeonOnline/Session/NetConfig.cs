@@ -16,6 +16,7 @@ namespace GungeonOnline.Session
         public static ConfigEntry<bool> SecondFightLock;
         public static ConfigEntry<int> SmoothingMs;
         public static ConfigEntry<float> CorrectionSpeed;
+        public static ConfigEntry<int> WorldSnapshotHz;
 
         public static void Bind(ConfigFile c)
         {
@@ -33,6 +34,9 @@ namespace GungeonOnline.Session
             CorrectionSpeed = c.Bind("Network", "CorrectionSpeed", 0.25f, new ConfigDescription(
                 "How fast small position differences from the host are blended out per frame. Lower = smoother, higher = tighter.",
                 new AcceptableValueRange<float>(0.05f, 1f)));
+            WorldSnapshotHz = c.Bind("Network", "WorldSnapshotHz", 120, new ConfigDescription(
+                "Host only: how often enemy positions are sent. Higher = fresher, more upload. Between updates the client extrapolates.",
+                new AcceptableValueRange<int>(30, 240)));
         }
     }
 }

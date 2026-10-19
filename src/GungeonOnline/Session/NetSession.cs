@@ -16,6 +16,7 @@ namespace GungeonOnline.Session
         Snapshot = 2,
         Event = 3,
         Lobby = 4,
+        World = 5,
     }
 
     /// <summary>

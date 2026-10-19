@@ -24,8 +24,20 @@ namespace GungeonOnline.Dev
         static float t0 = -1f;
         static NetInputDevice device;
 
+        static bool bot;
+        static float botPhase;
+
         public static void Begin()
         {
+            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight")
+            {
+                bot = true;
+                device = InputPump.Route(0);
+                InputPump.BeforePoll += Tick;
+                t0 = Time.realtimeSinceStartup;
+                Plugin.Log.LogInfo("Scenario: fight bot");
+                return;
+            }
             if (DevEnv.Script == null) return;
             if (!File.Exists(DevEnv.Script)) { Plugin.Log.LogWarning("Scenario missing: " + DevEnv.Script); return; }
             foreach (var raw in File.ReadAllLines(DevEnv.Script))
@@ -46,6 +58,33 @@ namespace GungeonOnline.Dev
             Plugin.Log.LogInfo($"Scenario: {steps.Count} steps, {markers.Count} markers");
         }
 
+        /// <summary>Test bot: aim at the nearest living enemy in the same room, fire in bursts, strafe around it.</summary>
+        static InputFrame BotFrame(float t)
+        {
+            var f = new InputFrame();
+            var me = GameManager.Instance.PrimaryPlayer;
+            if (me == null) return f;
+            AIActor best = null;
+            float bestD = 1e9f;
+            foreach (var e in StaticReferenceManager.AllEnemies)
+            {
+                if (!e || e.healthHaver == null || e.healthHaver.IsDead || e.CompanionOwner != null) continue;
+                if (e.ParentRoom != me.CurrentRoom) continue;
+                float d = (e.CenterPosition - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = e; }
+            }
+            if (best == null) return f;
+            var to = (best.CenterPosition - me.CenterPosition).normalized;
+            f.Aim = to;
+            botPhase += Time.deltaTime;
+            f.Set(NetButton.Shoot, (botPhase % 0.3f) < 0.2f);
+            var strafe = new Vector2(-to.y, to.x) * (Mathf.Sin(t * 0.7f) > 0 ? 1f : -1f);
+            float dist = Mathf.Sqrt(bestD);
+            f.Move = (strafe + (dist > 6f ? to : dist < 3f ? -to : Vector2.zero)).normalized;
+            if (Mathf.Repeat(t, 4f) < 0.02f) f.Set(NetButton.DodgeRoll, true);
+            return f;
+        }
+
         static float F(string s) => float.Parse(s, CultureInfo.InvariantCulture);
 
         static void Tick()
@@ -54,8 +93,10 @@ namespace GungeonOnline.Dev
             InputPump.EnforceRouting();
             float t = Time.realtimeSinceStartup - t0;
             var frame = default(InputFrame);
-            foreach (var s in steps)
-                if (t >= s.At && t < s.At + s.Dur) frame = s.Frame;
+            if (bot) frame = BotFrame(t);
+            else
+                foreach (var s in steps)
+                    if (t >= s.At && t < s.At + s.Dur) frame = s.Frame;
             device.Frame = frame;
 
             for (int i = markers.Count - 1; i >= 0; i--)

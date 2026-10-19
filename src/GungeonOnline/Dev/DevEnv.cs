@@ -21,6 +21,8 @@ namespace GungeonOnline.Dev
         public static int? PortOverride;
         /// <summary>GO_FPS: frame rate cap for the instance (players run uncapped; tests pick 60, 200, 240...).</summary>
         public static int Fps = 60;
+        /// <summary>GO_START_RUN_AT: host leaves the Breach for floor 1 this many seconds after both players exist.</summary>
+        public static float StartRunAt = -1f;
 
         public static bool IsHarness => !string.IsNullOrEmpty(SaveDir);
 
@@ -32,6 +34,8 @@ namespace GungeonOnline.Dev
             Auto = Get("GO_AUTO");
             if (int.TryParse(Get("GO_PORT") ?? "", out var port)) PortOverride = port;
             if (int.TryParse(Get("GO_FPS") ?? "", out var fps) && fps > 0) Fps = fps;
+            var sr = Get("GO_START_RUN_AT");
+            if (sr != null && float.TryParse(sr, NumberStyles.Float, CultureInfo.InvariantCulture, out var srf)) StartRunAt = srf;
             var q = Get("GO_QUIT_AFTER");
             if (q != null && float.TryParse(q, NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) QuitAfter = f;
         }

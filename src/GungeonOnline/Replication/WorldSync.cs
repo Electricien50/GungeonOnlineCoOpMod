@@ -1,0 +1,449 @@
+using System.Collections.Generic;
+using Dungeonator;
+using GungeonOnline.Net;
+using GungeonOnline.Session;
+using HarmonyLib;
+using UnityEngine;
+
+namespace GungeonOnline.Replication
+{
+    /// <summary>
+    /// Host-owned world: enemies and room combat state.
+    /// Host: watches every AIActor and room, sends spawn/death/damage/seal events (reliable) and
+    /// state snapshots (unreliable). Client: removes its own generated enemies after each floor load and
+    /// shows replicas whose brains are off; rooms seal, unseal and spawn waves only on host events.
+    /// </summary>
+    [DefaultExecutionOrder(31500)]
+    internal sealed class WorldSync : MonoBehaviour
+    {
+        public static WorldSync Instance { get; private set; }
+
+        const byte EvFloorReady = 1, EvSpawn = 2, EvDespawn = 3, EvDeath = 4, EvDamage = 5, EvRoomSeal = 6;
+
+        /// <summary>True while applying a host event on the client (lets the blocked game paths run).</summary>
+        public static bool ApplyingHost;
+
+        static bool IsClient => NetSession.Active && !NetSession.IsHost;
+        static bool IsHostSession => NetSession.Active && NetSession.IsHost;
+
+        // Host state
+        readonly HashSet<Connection> ready = new HashSet<Connection>();
+        readonly HashSet<uint> deathSent = new HashSet<uint>();
+        sealed class Sent { public Vector2 Pos; public int Clip; public bool Flip; public byte Hp; public float At; }
+        readonly Dictionary<uint, Sent> lastSent = new Dictionary<uint, Sent>();
+        float nextSnapshot;
+        uint snapSeq;
+
+        // Client state
+        public bool FloorReady;
+        sealed class Replica
+        {
+            public AIActor Actor;
+            public Vector2 Target, Velocity;
+            public float TargetTime;
+            public int Clip;
+        }
+        readonly Dictionary<uint, Replica> replicas = new Dictionary<uint, Replica>();
+        uint lastSnapSeq;
+        readonly List<byte[]> earlyEvents = new List<byte[]>();
+
+        public int ReplicaCount => replicas.Count;
+        public int TrackedCount => lastSent.Count;
+        public int ReadyPeers => ready.Count;
+        public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied;
+
+        readonly WireWriter w = new WireWriter(2048);
+
+        public static void Install(Harmony h)
+        {
+            var t = typeof(WorldSync);
+            h.Patch(AccessTools.Method(typeof(RoomHandler), nameof(RoomHandler.SealRoom)), prefix: new HarmonyMethod(t, nameof(SealPrefix)), postfix: new HarmonyMethod(t, nameof(SealPostfix)));
+            h.Patch(AccessTools.Method(typeof(RoomHandler), nameof(RoomHandler.UnsealRoom)), prefix: new HarmonyMethod(t, nameof(SealPrefix)), postfix: new HarmonyMethod(t, nameof(UnsealPostfix)));
+            h.Patch(AccessTools.Method(typeof(RoomHandler), nameof(RoomHandler.TriggerReinforcementLayer)), prefix: new HarmonyMethod(t, nameof(ClientBlockBool)));
+            h.Patch(AccessTools.Method(typeof(RoomHandler), nameof(RoomHandler.HandleRoomClearReward)), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
+            h.Patch(AccessTools.Method(typeof(AIActor), "HandleLootPinata"), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
+            h.Patch(AccessTools.Method(typeof(AIActor), nameof(AIActor.ForceDeath)), prefix: new HarmonyMethod(t, nameof(DeathPrefix)));
+            h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.ApplyDamage)), prefix: new HarmonyMethod(t, nameof(DamagePrefix)), postfix: new HarmonyMethod(t, nameof(DamagePostfix)));
+            h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.Die)), prefix: new HarmonyMethod(t, nameof(DiePrefix)));
+        }
+
+        void Awake() { Instance = this; }
+
+        void Start()
+        {
+            NetSession.Instance.On(Channel.Event, OnEvent);
+            NetSession.Instance.On(Channel.World, OnWorld);
+            NetSession.Instance.PeerLeft += (c, why) => ready.Remove(c);
+            NetSession.Instance.SessionEnded += Reset;
+        }
+
+        void Reset()
+        {
+            ready.Clear(); deathSent.Clear(); lastSent.Clear(); replicas.Clear(); earlyEvents.Clear();
+            FloorReady = false; lastSnapSeq = 0;
+            NetIds.Clear();
+        }
+
+        // ---------------- Patches ----------------
+
+        static bool ClientBlock() => !IsClient || ApplyingHost;
+
+        static bool ClientBlockBool(ref bool __result)
+        {
+            if (!IsClient || ApplyingHost) return true;
+            __result = false;
+            return false;
+        }
+
+        static bool SealPrefix() => !IsClient || ApplyingHost;
+
+        static void SealPostfix(RoomHandler __instance) { if (IsHostSession) Instance.SendRoomSeal(__instance, true); }
+        static void UnsealPostfix(RoomHandler __instance) { if (IsHostSession) Instance.SendRoomSeal(__instance, false); }
+
+        static bool IsReplica(HealthHaver hh)
+        {
+            if (!IsClient || hh == null) return false;
+            var a = hh.aiActor;
+            return a != null && NetIds.Has(a);
+        }
+
+        /// <summary>Client: replicas take damage only from host events (the host decides every hit on enemies).</summary>
+        static bool DamagePrefix(HealthHaver __instance) => ApplyingHost || !IsReplica(__instance);
+
+        static void DamagePostfix(HealthHaver __instance, float damage, Vector2 direction)
+        {
+            if (!IsHostSession || Instance == null) return;
+            var a = __instance.aiActor;
+            if (a == null) return;
+            uint id = NetIds.Of(a);
+            if (id == 0) return;
+            var w = Instance.w;
+            w.Reset(); w.U8(EvDamage); w.U32(id); w.F32(damage); w.F32(direction.x); w.F32(direction.y);
+            Instance.SendEvent(w.ToArray());
+        }
+
+        static bool DiePrefix(HealthHaver __instance) => ApplyingHost || !IsReplica(__instance);
+
+        static void DeathPrefix(AIActor __instance, Vector2 finalDamageDirection)
+        {
+            if (!IsHostSession || Instance == null) return;
+            uint id = NetIds.Of(__instance);
+            if (id == 0 || !Instance.deathSent.Add(id)) return;
+            var w = Instance.w;
+            w.Reset(); w.U8(EvDeath); w.U32(id); w.F32(finalDamageDirection.x); w.F32(finalDamageDirection.y);
+            Instance.SendEvent(w.ToArray());
+            Instance.DeathsSent++;
+        }
+
+        // ---------------- Host ----------------
+
+        void SendEvent(byte[] data)
+        {
+            foreach (var c in ready) c.Send((byte)Channel.Event, data, Delivery.ReliableOrdered);
+        }
+
+        static int RoomIndex(RoomHandler r)
+        {
+            var rooms = GameManager.Instance.Dungeon != null ? GameManager.Instance.Dungeon.data.rooms : null;
+            return rooms == null || r == null ? -1 : rooms.IndexOf(r);
+        }
+
+        static RoomHandler RoomAt(int i)
+        {
+            var rooms = GameManager.Instance.Dungeon != null ? GameManager.Instance.Dungeon.data.rooms : null;
+            return rooms != null && i >= 0 && i < rooms.Count ? rooms[i] : null;
+        }
+
+        void SendRoomSeal(RoomHandler r, bool sealedNow)
+        {
+            int i = RoomIndex(r);
+            if (i < 0) return;
+            w.Reset(); w.U8(EvRoomSeal); w.I16((short)i); w.Bool(sealedNow);
+            SendEvent(w.ToArray());
+        }
+
+        static bool Replicated(AIActor a) => a != null && !(a is null) && a.gameObject.activeInHierarchy && a.GetComponent<PlayerController>() == null;
+
+        byte[] SpawnMessage(uint id, AIActor a)
+        {
+            var ww = new WireWriter(96);
+            ww.U8(EvSpawn); ww.U32(id); ww.Str(a.EnemyGuid ?? "");
+            Vector2 p = a.transform.position;
+            ww.F32(p.x); ww.F32(p.y);
+            ww.I16((short)RoomIndex(a.ParentRoom));
+            return ww.ToArray();
+        }
+
+        void HostLateUpdate()
+        {
+            if (GameManager.Instance.Dungeon == null || Dungeon.IsGenerating) return;
+            // New actors
+            foreach (var a in StaticReferenceManager.AllEnemies)
+            {
+                if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid)) continue;
+                uint id = NetIds.Assign(a);
+                var msg = SpawnMessage(id, a);
+                foreach (var c in ready) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
+                SpawnsSent++;
+            }
+            // Destroyed actors
+            foreach (var id in NetIds.Dead())
+            {
+                NetIds.Forget(id);
+                lastSent.Remove(id);
+                if (deathSent.Contains(id)) continue;
+                w.Reset(); w.U8(EvDespawn); w.U32(id);
+                SendEvent(w.ToArray());
+            }
+            if (ready.Count > 0 && Time.realtimeSinceStartup >= nextSnapshot)
+            {
+                nextSnapshot = Time.realtimeSinceStartup + 1f / Mathf.Max(10, NetConfig.WorldSnapshotHz.Value);
+                SendSnapshot();
+            }
+        }
+
+        void SendSnapshot()
+        {
+            float now = Time.realtimeSinceStartup;
+            snapSeq++;
+            var batch = new List<KeyValuePair<uint, AIActor>>();
+            foreach (var kv in NetIds.All)
+            {
+                var a = kv.Value as AIActor;
+                if (a == null || a.healthHaver == null || a.healthHaver.IsDead) continue;
+                Vector2 pos = a.transform.position;
+                int clip = a.spriteAnimator != null && a.spriteAnimator.CurrentClip != null ? ClipHash(a.spriteAnimator.CurrentClip.name) : 0;
+                bool flip = a.sprite != null && a.sprite.FlipX;
+                byte hp = (byte)Mathf.Clamp(Mathf.RoundToInt(a.healthHaver.GetCurrentHealthPercentage() * 255f), 0, 255);
+                if (!lastSent.TryGetValue(kv.Key, out var s)) lastSent[kv.Key] = s = new Sent { At = -10 };
+                bool changed = (pos - s.Pos).sqrMagnitude > 1e-4f || clip != s.Clip || flip != s.Flip || hp != s.Hp;
+                if (!changed && now - s.At < 0.5f) continue; // idle actors refresh twice a second
+                s.Pos = pos; s.Clip = clip; s.Flip = flip; s.Hp = hp; s.At = now;
+                batch.Add(new KeyValuePair<uint, AIActor>(kv.Key, a));
+            }
+            const int perPacket = 55; // 19 bytes each, stays under one datagram
+            for (int start = 0; start < batch.Count; start += perPacket)
+            {
+                int n = Mathf.Min(perPacket, batch.Count - start);
+                w.Reset();
+                w.U32(snapSeq);
+                w.U8((byte)n);
+                for (int i = start; i < start + n; i++)
+                {
+                    var a = batch[i].Value;
+                    var s = lastSent[batch[i].Key];
+                    var v = a.specRigidbody != null ? a.specRigidbody.Velocity : Vector2.zero;
+                    w.U32(batch[i].Key);
+                    w.F32(s.Pos.x); w.F32(s.Pos.y);
+                    w.I16((short)Mathf.Clamp(Mathf.RoundToInt(v.x * 64f), short.MinValue, short.MaxValue));
+                    w.I16((short)Mathf.Clamp(Mathf.RoundToInt(v.y * 64f), short.MinValue, short.MaxValue));
+                    w.U16((ushort)s.Clip);
+                    w.U8((byte)((s.Flip ? 1 : 0)));
+                    w.U8(s.Hp);
+                }
+                var msg = w.ToArray();
+                foreach (var c in ready) c.Send((byte)Channel.World, msg, Delivery.Unreliable);
+            }
+        }
+
+        static int ClipHash(string name)
+        {
+            uint h = 2166136261;
+            for (int i = 0; i < name.Length; i++) { h ^= name[i]; h *= 16777619; }
+            return (int)(h & 0xFFFF);
+        }
+
+        // ---------------- Client ----------------
+
+        /// <summary>Client: called by RunSync once a floor finished generating.</summary>
+        public void OnFloorLoaded()
+        {
+            if (!IsClient) return;
+            replicas.Clear();
+            NetIds.Clear();
+            int removed = 0;
+            foreach (var a in new List<AIActor>(StaticReferenceManager.AllEnemies))
+            {
+                if (a == null || a.GetComponent<PlayerController>() != null) continue;
+                if (a.CompanionOwner != null && a.CompanionOwner == Game.PlayerSlots.Local) continue; // own companions stay local
+                a.EraseFromExistence(true);
+                removed++;
+            }
+            FloorReady = true;
+            w.Reset(); w.U8(EvFloorReady); w.I32(GameManager.Instance.CurrentRunSeed);
+            NetSession.Instance.Node.Broadcast((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
+            Plugin.Log.LogInfo($"WorldSync: client removed {removed} local enemies, ready");
+            foreach (var e in earlyEvents) ApplyEvent(e);
+            earlyEvents.Clear();
+        }
+
+        public void OnFloorUnloading()
+        {
+            FloorReady = false;
+            replicas.Clear();
+            if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); }
+        }
+
+        void OnEvent(Connection c, byte[] data, Delivery d)
+        {
+            if (data.Length == 0) return;
+            if (NetSession.IsHost)
+            {
+                if (data[0] == EvFloorReady)
+                {
+                    ready.Add(c);
+                    // Send the whole current world to the newcomer.
+                    foreach (var kv in NetIds.All)
+                        if (kv.Value is AIActor a && a && !a.healthHaver.IsDead)
+                            c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
+                    foreach (var room in GameManager.Instance.Dungeon.data.rooms)
+                        if (room.IsSealed) { w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(true); c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered); }
+                    Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready, sent {NetIds.Dead().Count == 0} world");
+                }
+                return;
+            }
+            if (!FloorReady) { earlyEvents.Add(data); return; }
+            ApplyEvent(data);
+        }
+
+        void ApplyEvent(byte[] data)
+        {
+            var r = new WireReader(data, 0, data.Length);
+            byte type = r.U8();
+            ApplyingHost = true;
+            try
+            {
+                switch (type)
+                {
+                    case EvSpawn: ApplySpawn(ref r); break;
+                    case EvDespawn:
+                        {
+                            uint id = r.U32();
+                            if (replicas.TryGetValue(id, out var rep) && rep.Actor) rep.Actor.EraseFromExistence(true);
+                            replicas.Remove(id); NetIds.Forget(id);
+                            break;
+                        }
+                    case EvDeath:
+                        {
+                            uint id = r.U32();
+                            var dir = new Vector2(r.F32(), r.F32());
+                            if (replicas.TryGetValue(id, out var rep) && rep.Actor && rep.Actor.healthHaver && !rep.Actor.healthHaver.IsDead)
+                            {
+                                rep.Actor.healthHaver.ForceSetCurrentHealth(0f);
+                                rep.Actor.healthHaver.Die(dir);
+                                DeathsApplied++;
+                            }
+                            replicas.Remove(id);
+                            break;
+                        }
+                    case EvDamage:
+                        {
+                            uint id = r.U32();
+                            float dmg = r.F32();
+                            var dir = new Vector2(r.F32(), r.F32());
+                            if (replicas.TryGetValue(id, out var rep) && rep.Actor && rep.Actor.healthHaver && !rep.Actor.healthHaver.IsDead)
+                            {
+                                // Visual hit (flash, knockback); health itself follows the host's snapshots, and death only by event.
+                                float before = rep.Actor.healthHaver.GetCurrentHealth();
+                                rep.Actor.healthHaver.ApplyDamage(Mathf.Min(dmg, Mathf.Max(0f, before - 0.01f)), dir, "host", CoreDamageTypes.None, DamageCategory.Normal, true);
+                            }
+                            break;
+                        }
+                    case EvRoomSeal:
+                        {
+                            var room = RoomAt(r.I16());
+                            bool s = r.Bool();
+                            if (room != null) { if (s) room.SealRoom(); else room.UnsealRoom(); }
+                            break;
+                        }
+                }
+            }
+            catch (System.Exception e) { Plugin.Log.LogError("WorldSync event " + type + ": " + e); }
+            finally { ApplyingHost = false; }
+        }
+
+        void ApplySpawn(ref WireReader r)
+        {
+            uint id = r.U32();
+            string guid = r.Str();
+            var pos = new Vector2(r.F32(), r.F32());
+            var room = RoomAt(r.I16()) ?? pos.GetAbsoluteRoom();
+            if (replicas.ContainsKey(id)) return;
+            var prefab = EnemyDatabase.GetOrLoadByGuid(guid);
+            if (prefab == null) { Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
+            var a = AIActor.Spawn(prefab, pos, room, false, AIActor.AwakenAnimationType.Default, false);
+            if (a == null) return;
+            MakeReplica(a);
+            NetIds.Bind(id, a);
+            replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup };
+            SpawnsApplied++;
+        }
+
+        static void MakeReplica(AIActor a)
+        {
+            if (a.behaviorSpeculator) a.behaviorSpeculator.enabled = false;
+            if (a.aiAnimator) a.aiAnimator.enabled = false;
+            if (a.aiShooter) a.aiShooter.enabled = false;
+            a.CanDropCurrency = false;
+            a.CanDropItems = false;
+        }
+
+        void OnWorld(Connection c, byte[] data, Delivery d)
+        {
+            if (NetSession.IsHost || !FloorReady) return;
+            var r = new WireReader(data, 0, data.Length);
+            uint seq = r.U32();
+            if (seq + 1000 < lastSnapSeq) lastSnapSeq = 0; // new floor restarted numbering
+            bool stale = seq < lastSnapSeq;
+            if (seq > lastSnapSeq) lastSnapSeq = seq;
+            int n = r.U8();
+            float now = Time.realtimeSinceStartup;
+            for (int i = 0; i < n; i++)
+            {
+                uint id = r.U32();
+                var pos = new Vector2(r.F32(), r.F32());
+                var vel = new Vector2(r.I16() / 64f, r.I16() / 64f);
+                int clip = r.U16();
+                byte flags = r.U8();
+                byte hp = r.U8();
+                if (stale || !replicas.TryGetValue(id, out var rep) || !rep.Actor) continue;
+                rep.Target = pos; rep.Velocity = vel; rep.TargetTime = now;
+                var a = rep.Actor;
+                if (clip != 0 && clip != rep.Clip && a.spriteAnimator != null && a.spriteAnimator.Library != null)
+                {
+                    foreach (var cl in a.spriteAnimator.Library.clips)
+                        if (cl != null && cl.name != null && ClipHash(cl.name) == clip) { a.spriteAnimator.Play(cl); break; }
+                    rep.Clip = clip;
+                }
+                if (a.sprite != null) a.sprite.FlipX = (flags & 1) != 0;
+                if (a.healthHaver != null && !a.healthHaver.IsDead)
+                    a.healthHaver.ForceSetCurrentHealth(Mathf.Max(0.01f, a.healthHaver.GetMaxHealth() * hp / 255f));
+            }
+            SnapshotsApplied++;
+        }
+
+        void ClientMoveReplicas()
+        {
+            float now = Time.realtimeSinceStartup;
+            foreach (var kv in replicas)
+            {
+                var rep = kv.Value;
+                var a = rep.Actor;
+                if (!a || a.healthHaver == null || a.healthHaver.IsDead) continue;
+                float age = Mathf.Min(0.1f, now - rep.TargetTime); // extrapolate at most 100 ms
+                Vector2 want = rep.Target + rep.Velocity * age;
+                Vector2 cur = a.transform.position;
+                if ((want - cur).sqrMagnitude < 1e-6f) continue;
+                a.transform.position = new Vector3(want.x, want.y, a.transform.position.z);
+                if (a.specRigidbody) a.specRigidbody.Reinitialize();
+            }
+        }
+
+        void LateUpdate()
+        {
+            if (!NetSession.Active) return;
+            if (NetSession.IsHost) HostLateUpdate();
+            else if (FloorReady) ClientMoveReplicas();
+        }
+    }
+}
