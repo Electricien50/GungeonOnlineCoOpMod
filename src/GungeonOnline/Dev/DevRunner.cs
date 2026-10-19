@@ -72,7 +72,7 @@ namespace GungeonOnline.Dev
                 var list = room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear);
                 if (list != null && list.Count >= 2 && room != gm.Dungeon.data.Entrance) rooms.Add(room);
             }
-            rooms.Sort((x, y) => x.distanceFromEntrance.CompareTo(y.distanceFromEntrance));
+            rooms.Sort((x, y) => y.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear).Count.CompareTo(x.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear).Count));
             if (rooms.Count == 0) { Plugin.Log.LogWarning("Harness: no fight room"); return; }
             int i = 0;
             foreach (var p in gm.AllPlayers)
@@ -138,6 +138,12 @@ namespace GungeonOnline.Dev
                     if (lb != null && lb.ActiveActions != null) net += $" localMove={lb.ActiveActions.Move.Vector} localSeq={Replication.InputSync.Instance.LocalSeq}";
                     var ws = Replication.WorldSync.Instance;
                     if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} enemies={StaticReferenceManager.AllEnemies.Count}]";
+                    var ps = Replication.ProjectileSync.Instance;
+                    if (ps != null) net += $" proj[announced={ps.Announced} updates={ps.Updates} copies={ps.Copies} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
+                    var vs = Replication.VitalsSync.Instance;
+                    if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied}]";
+                    foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" hpR{kv.Key}={kv.Value.healthHaver.GetCurrentHealth()}";
+                    net += $" hp0={(gm.PrimaryPlayer != null ? gm.PrimaryPlayer.healthHaver.GetCurrentHealth() : -1)}";
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
                 string fp = Game.RunSync.Instance != null ? Game.RunSync.Instance.LastFingerprint : "-";

@@ -135,6 +135,7 @@ namespace GungeonOnline.Replication
             var t = T(slot);
             if (seq <= t.LastReconciledSeq) return;
             if (!t.History.TryGetValue(seq, out var mine)) return; // not simulated here yet (remote ahead of us)
+            if (p.specRigidbody == null || GameManager.Instance.IsLoadingLevel) return;
             t.LastReconciledSeq = seq;
             var err = hostPos - mine;
             t.LastError = err.magnitude;
@@ -167,7 +168,7 @@ namespace GungeonOnline.Replication
                 var t = kv.Value;
                 if (t.PendingCorrection.sqrMagnitude < 1e-6f) continue;
                 var p = PlayerSlots.ForSlot(kv.Key);
-                if (!p) { t.PendingCorrection = Vector2.zero; continue; }
+                if (!p || p.specRigidbody == null || GameManager.Instance.IsLoadingLevel) { t.PendingCorrection = Vector2.zero; continue; }
                 var step = t.PendingCorrection * NetConfig.CorrectionSpeed.Value;
                 if (t.PendingCorrection.magnitude < 0.1f) step = t.PendingCorrection;
                 // Move directly: the target is where the host's physics put this player, so it is a legal spot.

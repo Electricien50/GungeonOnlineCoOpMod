@@ -50,6 +50,7 @@ namespace GungeonOnline.Replication
         public int ReplicaCount => replicas.Count;
         public int TrackedCount => lastSent.Count;
         public int ReadyPeers => ready.Count;
+        public bool IsReady(Connection c) => ready.Contains(c);
         public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied;
 
         readonly WireWriter w = new WireWriter(2048);
@@ -180,7 +181,8 @@ namespace GungeonOnline.Replication
             // New actors
             foreach (var a in StaticReferenceManager.AllEnemies)
             {
-                if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid)) continue;
+                // Companions come from their player's items and exist for every copy of that player on every machine.
+                if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid) || a.CompanionOwner != null) continue;
                 uint id = NetIds.Assign(a);
                 var msg = SpawnMessage(id, a);
                 foreach (var c in ready) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
@@ -265,7 +267,7 @@ namespace GungeonOnline.Replication
             foreach (var a in new List<AIActor>(StaticReferenceManager.AllEnemies))
             {
                 if (a == null || a.GetComponent<PlayerController>() != null) continue;
-                if (a.CompanionOwner != null && a.CompanionOwner == Game.PlayerSlots.Local) continue; // own companions stay local
+                if (a.CompanionOwner != null || a.GetComponent<CompanionController>() != null) continue; // companions are per machine
                 a.EraseFromExistence(true);
                 removed++;
             }
@@ -287,6 +289,13 @@ namespace GungeonOnline.Replication
         void OnEvent(Connection c, byte[] data, Delivery d)
         {
             if (data.Length == 0) return;
+            if (data[0] >= 40 && data[0] < 50)
+            {
+                var vr = new WireReader(data, 1, data.Length - 1);
+                try { VitalsSync.Instance?.Apply(c, data[0], ref vr); }
+                catch (System.Exception e) { Plugin.Log.LogError("Vitals: " + e); }
+                return;
+            }
             if (NetSession.IsHost)
             {
                 if (data[0] == EvFloorReady)
@@ -313,6 +322,7 @@ namespace GungeonOnline.Replication
             ApplyingHost = true;
             try
             {
+                if (type >= 20 && type < 30) { ProjectileSync.Instance?.Apply(type, ref r); return; }
                 switch (type)
                 {
                     case EvSpawn: ApplySpawn(ref r); break;
@@ -371,6 +381,7 @@ namespace GungeonOnline.Replication
             if (replicas.ContainsKey(id)) return;
             var prefab = EnemyDatabase.GetOrLoadByGuid(guid);
             if (prefab == null) { Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
+            ProjectileSync.LearnBank(prefab);
             var a = AIActor.Spawn(prefab, pos, room, false, AIActor.AwakenAnimationType.Default, false);
             if (a == null) return;
             MakeReplica(a);

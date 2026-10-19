@@ -26,7 +26,8 @@ namespace GungeonOnline.Camera
         {
             foreach (var kv in PlayerSlots.Remotes)
                 if (kv.Value) PlayerSlots.SetIgnoredByCamera(kv.Value, true);
-            if (GameManager.HasInstance) GameManager.Instance.MainCameraController.ClearPlayerCache();
+            if (GameManager.HasInstance && GameManager.Instance.MainCameraController != null)
+                GameManager.Instance.MainCameraController.ClearPlayerCache();
         }
     }
 }
