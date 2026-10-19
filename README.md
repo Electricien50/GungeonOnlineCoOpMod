@@ -95,6 +95,10 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 - **4-player support is in active development**. The netcode was built for 4 from day one; today the game side supports 2.
 - **Free for all co-op style:** fight in different rooms at the same time.
 
+## Donate
+
+My mods will always be free but donations are welcome! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
+
 ## Features
 
 - **Any character for both players**, duplicates allowed. Pick in your own Breach.
@@ -149,10 +153,6 @@ The full list is in [docs/COOP-INTERACTIONS.md](docs/COOP-INTERACTIONS.md).
 ## Made from scratch
 
 Enter The Gungeon Online Co-Op Mod is original work. **It contains no code from GungeonTogether or any other Gungeon multiplayer mod.** Nothing was copied, ported or adapted from them, and no assets or files from them were used. Before starting I looked at GungeonTogether once, to see what already existed, and decided to build my own instead. The full git history shows the project being built up from an empty repository. Details: [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md).
-
-## Donate
-
-My mods will always be free but donations are welcome! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
 
 ## FAQ
 
