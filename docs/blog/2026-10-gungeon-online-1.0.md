@@ -4,7 +4,7 @@ date: 2026-10-19
 author: Hero88go
 ---
 
-![Enter The Gungeon Online Co-Op Mod](../media/hero.png)
+![Enter The Gungeon Online Co-Op Mod](../media/front-friend-nearby.png)
 
 # Enter The Gungeon Online Co-Op Mod: real online co-op for Enter the Gungeon
 
