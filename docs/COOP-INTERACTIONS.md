@@ -62,9 +62,3 @@ local co-op, so its gameplay result is already correct. What needs netplay-aware
 - `Replication/PropSync.cs`: breakables, tables, minecarts, the exit elevator.
 - `Replication/StatSync.cs`: progress for the guest's save (credits, kills, unlock flags).
 - `Session/PauseMenuEntry.cs`: Play Online in the pause menu; exit and quick restart made safe online.
-
-## Test scenarios (one per row, added as the matching milestone lands)
-
-`dialogue-one-player`, `shop-while-partner-fights`, `pause-no-freeze`, `boss-intro-both`, `ghost-roam`,
-`superhot-timescale`, `elevator-both`, `pickup-race`, `revive-chest`, `guest-save-credit`.
-

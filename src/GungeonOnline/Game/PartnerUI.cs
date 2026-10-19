@@ -38,8 +38,8 @@ namespace GungeonOnline.Game
 
         void Start()
         {
-            // Playtest harness: show both helpers so the screenshots include them.
-            if (System.Environment.GetEnvironmentVariable("GO_PLAYTEST_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.NameTagStyle.Value = 1; NetConfig.FriendCrosshair.Value = true; }
+            // Screenshots: show both helpers.
+            if (System.Environment.GetEnvironmentVariable("GO_SHOT_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.NameTagStyle.Value = 1; NetConfig.FriendCrosshair.Value = true; }
             // Harness: GO_SHOT_UI="locator,tag,opacity,crosshair" for front-page screenshots, e.g. "5,1,1,0".
             var su = System.Environment.GetEnvironmentVariable("GO_SHOT_UI");
             if (!string.IsNullOrEmpty(su))

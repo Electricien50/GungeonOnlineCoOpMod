@@ -69,6 +69,10 @@ It gets through most home routers on its own (UPnP and hole punching), with a re
 
 Enter The Gungeon Online Co-Op Mod is original work. It contains no code from GungeonTogether or any other Gungeon multiplayer mod: nothing copied, ported or adapted. I looked at GungeonTogether once before starting, to see what already existed, and decided to build my own. The whole git history is public, from the first commit up.
 
+## Found a bug?
+
+If anything looks off, open the menu, pick **Save report**, and send me the file.
+
 ## Get it
 
 - Download: https://github.com/Hero88go/GungeonOnlineCoOpMod/releases

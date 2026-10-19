@@ -20,6 +20,7 @@ The plugin lands in `src/GungeonOnline/bin/Release/GungeonOnline.dll`. Copy it t
 ## Tests
 
 - `dotnet run --project tests/NetTests -c Release`: the network layer (reliability, fragmentation, handshake, timeouts).
+- Then play it: two PCs (or two copies of the game on one PC), host and join, and try what you changed. Never commit game files.
 
 ## Ground rules
 
@@ -27,3 +28,4 @@ The plugin lands in `src/GungeonOnline/bin/Release/GungeonOnline.dll`. Copy it t
 - The host decides outcomes; other machines predict their own player and follow the host for everything else. Read `docs/ARCHITECTURE.md` before changing replication.
 - Every co-op difference from vanilla goes in `docs/COOP-INTERACTIONS.md`.
 - Player-facing text is plain language (no "slot", "rtt", "reconcile").
+- Play what you changed online before opening a pull request that touches netcode.

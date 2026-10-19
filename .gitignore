@@ -12,3 +12,5 @@ dist/
 .game-c/
 .game-d/
 *.stackdump
+.game-*/
+__pycache__/
