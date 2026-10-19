@@ -48,6 +48,8 @@ namespace GungeonOnline.Net
             {
                 try
                 {
+                    // Wait at most 50 ms so the thread can always notice shutdown; returns at once when data is there.
+                    if (!socket.Poll(50000, SelectMode.SelectRead)) continue;
                     EndPoint from = new IPEndPoint(socket.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
                     int n = socket.ReceiveFrom(buf, ref from);
                     if (n <= 0) continue;
@@ -83,6 +85,7 @@ namespace GungeonOnline.Net
         public void Dispose()
         {
             running = false;
+            try { thread.Join(500); } catch { }
             try { socket.Close(); } catch { }
         }
     }

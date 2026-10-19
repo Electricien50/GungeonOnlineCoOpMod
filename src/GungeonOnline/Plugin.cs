@@ -19,15 +19,19 @@ namespace GungeonOnline
         {
             Instance = this;
             Log = Logger;
+            Session.NetConfig.Bind(Config);
             Dev.DevEnv.Load();
             harmony = new Harmony(Guid);
             Dev.SaveIsolation.Apply(harmony);
             Game.BackgroundRun.Install(harmony);
             Input.InputPump.Install(harmony);
             Dev.QuickStart.Prepare();
-            Log.LogInfo($"{Name} {Version} loaded. dev={Dev.DevEnv.Summary()}");
+            Log.LogInfo($"{Name} {Version} loaded. game={Session.NetSession.GameHash} dev={Dev.DevEnv.Summary()}");
+            gameObject.AddComponent<Session.NetSession>();
+            gameObject.AddComponent<Session.Overlay>();
             gameObject.AddComponent<Dev.DevRunner>();
             StartCoroutine(Dev.QuickStart.Run());
+            Dev.AutoSession.Begin();
         }
     }
 }

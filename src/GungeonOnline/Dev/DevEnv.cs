@@ -17,6 +17,9 @@ namespace GungeonOnline.Dev
         /// <summary>GO_AUTO: "host" or "join:CODE".</summary>
         public static string Auto;
 
+        /// <summary>GO_PORT: UDP port override so several instances can host or join on one machine.</summary>
+        public static int? PortOverride;
+
         public static bool IsHarness => !string.IsNullOrEmpty(SaveDir);
 
         public static void Load()
@@ -25,6 +28,7 @@ namespace GungeonOnline.Dev
             StatusFile = Get("GO_STATUS");
             Script = Get("GO_SCRIPT");
             Auto = Get("GO_AUTO");
+            if (int.TryParse(Get("GO_PORT") ?? "", out var port)) PortOverride = port;
             var q = Get("GO_QUIT_AFTER");
             if (q != null && float.TryParse(q, NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) QuitAfter = f;
         }

@@ -44,7 +44,15 @@ namespace GungeonOnline.Dev
                 string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
                 int players = gm != null && gm.AllPlayers != null ? gm.AllPlayers.Length : 0;
                 string pos = gm != null && gm.PrimaryPlayer != null ? gm.PrimaryPlayer.CenterPosition.ToString("F2") : "-";
-                string line = $"t={t:F1} frame={Time.frameCount} scene={scene} gm={gm != null} players={players} p0={pos}";
+                string net = "off";
+                var s = Session.NetSession.Instance;
+                if (Session.NetSession.Active)
+                {
+                    net = $"{(Session.NetSession.IsHost ? "host" : "client")} slot={Session.NetSession.LocalSlot} peers={s.Node.Connections.Count}";
+                    foreach (var c in s.Node.Connections) net += $" [P{c.Slot + 1} rtt={c.RttMs:F1} loss={c.LossPercent:F1} sent={c.PacketsSent} recv={c.PacketsReceived}]";
+                    if (s.InviteCodeText != null) net += " code=" + s.InviteCodeText;
+                }
+                string line = $"t={t:F1} frame={Time.frameCount} scene={scene} gm={gm != null} players={players} p0={pos} net={net}";
                 try { File.WriteAllText(DevEnv.StatusFile, line); } catch { }
             }
             if (DevEnv.QuitAfter > 0 && t >= DevEnv.QuitAfter)
