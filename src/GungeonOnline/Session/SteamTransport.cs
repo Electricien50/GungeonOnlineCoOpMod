@@ -128,7 +128,14 @@ namespace GungeonOnline.Session
             SteamMatchmaking.SetLobbyData(Lobby, "go_version", Plugin.Version);
             SteamMatchmaking.SetLobbyData(Lobby, "go_hash", NetSession.GameHash);
             SteamFriends.SetRichPresence("connect", "+connect_lobby " + Lobby.m_SteamID);
-            Plugin.Log.LogInfo("Steam lobby ready");
+            Plugin.Log.LogInfo("Steam lobby ready " + Lobby.m_SteamID + " owner " + SteamUser.GetSteamID().m_SteamID);
+            // Harness: hand the host's Steam id to the other test instance, and open the invite overlay once.
+            var f = Environment.GetEnvironmentVariable("GO_STEAM_FILE");
+            if (!string.IsNullOrEmpty(f))
+            {
+                try { System.IO.File.WriteAllText(f, SteamUser.GetSteamID().m_SteamID.ToString()); } catch { }
+                try { Invite(); Plugin.Log.LogInfo("Steam invite overlay requested"); } catch (Exception e) { Plugin.Log.LogWarning("Steam invite overlay failed: " + e.Message); }
+            }
         }
 
         void OnEntered(LobbyEnter_t r)

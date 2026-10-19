@@ -56,6 +56,12 @@ namespace GungeonOnline.Replication
             NetSession.Instance.On(Channel.Input, OnInput);
             NetSession.Instance.SessionEnded += () => { Streams.Clear(); LocalSeq = 0; };
             NetSession.Instance.PeerLeft += (c, why) => Streams.Remove(c.Slot);
+            // A (re)connected peer may have restarted and count from zero again: start their streams fresh.
+            NetSession.Instance.PeerJoined += c =>
+            {
+                if (NetSession.IsHost) Streams.Remove(c.Slot);
+                else Streams.Clear();
+            };
         }
 
         Stream Get(int slot)

@@ -30,7 +30,8 @@ namespace GungeonOnline.Dev
         public static void Begin()
         {
             passive = System.Environment.GetEnvironmentVariable("GO_BOT") == "passive";
-            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight" || passive)
+            cartBot = System.Environment.GetEnvironmentVariable("GO_BOT") == "cart";
+            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight" || passive || cartBot)
             {
                 bot = true;
                 device = InputPump.Route(0);
@@ -59,9 +60,44 @@ namespace GungeonOnline.Dev
             Plugin.Log.LogInfo($"Scenario: {steps.Count} steps, {markers.Count} markers");
         }
 
+        static bool cartBot;
+        static float cartSince = -1f;
+        public static int CartRides;
+        static System.Collections.Generic.List<MineCartController> cartList;
+        static float cartListAt;
+
+        /// <summary>Cart bot: walk to the nearest cart, press interact to get in, ride for 6 s, dodge roll out, repeat.</summary>
+        static InputFrame CartFrame(float t)
+        {
+            var f = new InputFrame();
+            var me = GameManager.Instance.PrimaryPlayer;
+            if (me == null || Game.SceneObjects.InBreach) return f;
+            if (me.currentMineCart)
+            {
+                if (cartSince < 0) { cartSince = t; CartRides++; Plugin.Log.LogInfo("Harness: riding a minecart"); }
+                if (t - cartSince > 6f) { f.Move = Vector2.left; f.Set(NetButton.DodgeRoll, Mathf.Repeat(t, 0.5f) < 0.1f); }
+                return f;
+            }
+            cartSince = -1f;
+            if (cartList == null || t > cartListAt + 2f) { cartList = Game.SceneObjects.All<MineCartController>(); cartListAt = t; }
+            MineCartController best = null; float bestD = 1e9f;
+            foreach (var c in cartList)
+            {
+                if (!c || c.occupation == MineCartController.CartOccupationState.ENEMY) continue;
+                float d = ((Vector2)c.transform.position - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = c; }
+            }
+            if (best == null || bestD > 100f) return f;
+            var delta = best.specRigidbody.UnitCenter - me.CenterPosition;
+            if (delta.magnitude > 1.2f) f.Move = delta.normalized;
+            f.Set(NetButton.Interact, Mathf.Repeat(t, 0.5f) < 0.1f);
+            return f;
+        }
+
         /// <summary>Test bot: aim at the nearest living enemy in the same room, fire in bursts, strafe around it.</summary>
         static InputFrame BotFrame(float t)
         {
+            if (cartBot) return CartFrame(t);
             var f = new InputFrame();
             var me = GameManager.Instance.PrimaryPlayer;
             // In the Breach, interacting would swap characters at the statues; the bot only plays dungeon floors.

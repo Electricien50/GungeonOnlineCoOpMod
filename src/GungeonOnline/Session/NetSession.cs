@@ -18,6 +18,7 @@ namespace GungeonOnline.Session
         Lobby = 4,
         World = 5,
         Props = 6,
+        Backup = 7,
     }
 
     /// <summary>
@@ -84,15 +85,73 @@ namespace GungeonOnline.Session
 
         public void On(Channel ch, Action<Connection, byte[], Delivery> h) => handlers[ch] = h;
 
-        Handshake MakeHandshake() => new Handshake { ModVersion = Plugin.Version, GameHash = GameHash, PlayerName = NetConfig.PlayerName.Value };
+        Handshake MakeHandshake() => new Handshake { ModVersion = Plugin.Version, GameHash = GameHash, PlayerName = NetConfig.PlayerName.Value, PlayerId = NetConfig.PlayerId.Value };
+
+        /// <summary>Host: player id -> slot, so a returning player (drop, crash) gets their own spot and character back.</summary>
+        public readonly Dictionary<string, int> KnownPlayers = new Dictionary<string, int>();
+        /// <summary>Client: trying to get back to the host after the connection dropped.</summary>
+        public bool Reconnecting { get; private set; }
+        double nextReconnect;
+        bool leaving;
+
+        // ---------- Keep-alive while loading ----------
+        // A floor load or the trip back to character select can block the game thread for longer than the
+        // timeout. A background thread then tells every direct UDP peer "still here", so nobody is dropped.
+        UdpDatagramSocket udp;
+        volatile EndPoint[] keepAlivePeers = new EndPoint[0];
+        static long TickMs => System.Diagnostics.Stopwatch.GetTimestamp() * 1000 / System.Diagnostics.Stopwatch.Frequency;
+        long lastMainTickMs;
+        System.Threading.Thread keepAliveThread;
+        static readonly byte[] KeepAlivePacket = { (byte)(Packet.Magic & 0xFF), (byte)(Packet.Magic >> 8), (byte)PacketType.KeepAlive };
+
+        void KeepAliveLoop()
+        {
+            while (true)
+            {
+                System.Threading.Thread.Sleep(500);
+                try
+                {
+                    var sock = udp;
+                    if (sock == null || TickMs - System.Threading.Interlocked.Read(ref lastMainTickMs) < 1500) continue;
+                    foreach (var ep in keepAlivePeers)
+                        if (ep is System.Net.IPEndPoint) sock.SendTo(ep, KeepAlivePacket, KeepAlivePacket.Length);
+                }
+                catch { }
+            }
+        }
+
+        void NoteMainTick()
+        {
+            System.Threading.Interlocked.Exchange(ref lastMainTickMs, TickMs);
+            if (node == null) { if (keepAlivePeers.Length > 0) keepAlivePeers = new EndPoint[0]; return; }
+            bool same = keepAlivePeers.Length == node.Connections.Count;
+            for (int i = 0; same && i < keepAlivePeers.Length; i++) same = ReferenceEquals(keepAlivePeers[i], node.Connections[i].Remote);
+            if (!same)
+            {
+                var list = new EndPoint[node.Connections.Count];
+                for (int i = 0; i < list.Length; i++) list[i] = node.Connections[i].Remote;
+                keepAlivePeers = list;
+            }
+            if (keepAliveThread == null)
+            {
+                keepAliveThread = new System.Threading.Thread(KeepAliveLoop) { IsBackground = true, Name = "GungeonOnline keep-alive" };
+                keepAliveThread.Start();
+            }
+        }
 
         IDatagramSocket MakeSocket(int port, bool withSteam)
         {
-            IDatagramSocket s = new UdpDatagramSocket(port);
+            IDatagramSocket s = udp = new UdpDatagramSocket(port);
             if (withSteam && steam != null)
             {
                 var steamSock = new SteamDatagramSocket(id => node != null && (node.IsHost || (steamHost is SteamEndPoint h && h.Id == id)));
                 s = new CompositeSocket(ep => ep is SteamEndPoint ? 1 : 0, s, steamSock);
+            }
+            float dropAt = EnvF("GO_DROP_AT"), dropFor = EnvF("GO_DROP_FOR");
+            if (dropFor > 0)
+            {
+                Plugin.Log.LogInfo($"Simulated outage at {dropAt}s for {dropFor}s");
+                s = new OutageSocket(s, () => Now >= dropAt && Now < dropAt + dropFor);
             }
             float lat = EnvF("GO_SIM_LAT"), jit = EnvF("GO_SIM_JIT"), loss = EnvF("GO_SIM_LOSS");
             if (lat > 0 || jit > 0 || loss > 0)
@@ -117,15 +176,17 @@ namespace GungeonOnline.Session
             {
                 int port = Dev.DevEnv.PortOverride ?? NetConfig.Port.Value;
                 node = new NetNode(MakeSocket(port, withSteam: true), true, NetConfig.MaxPlayers.Value, MakeHandshake());
+                node.SlotForPlayer = pid => !string.IsNullOrEmpty(pid) && KnownPlayers.TryGetValue(pid, out var known) ? known : -1;
                 steam?.Host(NetConfig.MaxPlayers.Value);
                 Wire();
                 StartStun();
                 if (NetConfig.UseUpnp.Value && !Dev.DevEnv.IsHarness)
                 {
                     upnp = new UpnpMapper();
-                    upnp.MapAsync(port, "Gungeon Online");
+                    upnp.MapAsync(port, "Enter The Gungeon Online Co-Op Mod");
                 }
                 Status = "Hosting";
+                Toasts.Show("Hosting. Getting your invite code...");
                 Game.BackgroundRun.SessionActive = true;
                 Game.BackgroundRun.Refresh();
                 Plugin.Log.LogInfo($"Hosting on UDP {port}, max {NetConfig.MaxPlayers.Value} players");
@@ -143,6 +204,8 @@ namespace GungeonOnline.Session
                 Wire();
                 StartStun();
                 node.Connect(ep, Now);
+                NetConfig.LastJoin.Value = code.Trim();
+                Toasts.Show("Joining...");
                 // Opening our NAT toward the host lets a host behind a strict NAT reach us once it punches back.
                 AddPunch(ep);
                 Status = "Joining " + ep;
@@ -163,12 +226,14 @@ namespace GungeonOnline.Session
         }
 
         /// <summary>Accepted a Steam invite: connect to the lobby owner over Steam P2P.</summary>
-        void JoinSteam(Steamworks.CSteamID owner)
+        internal void JoinSteam(Steamworks.CSteamID owner)
         {
             if (Active) Leave("joining another session");
             try
             {
                 steamHost = new SteamEndPoint(owner);
+                NetConfig.LastJoin.Value = "steam:" + owner.m_SteamID;
+                Toasts.Show("Joining your Steam friend...");
                 node = new NetNode(MakeSocket(Dev.DevEnv.PortOverride ?? 0, withSteam: true), false, NetConfig.MaxPlayers.Value, MakeHandshake());
                 Wire();
                 node.Connect(steamHost, Now);
@@ -194,16 +259,53 @@ namespace GungeonOnline.Session
             node.Connected += c =>
             {
                 Plugin.Log.LogInfo($"Peer connected: slot {c.Slot} {c.Remote} name={c.Tag}");
-                if (!node.IsHost) Status = "Connected (slot " + node.LocalSlot + ")";
+                string name = c.Tag as string;
+                if (name == "Gungeoneer") name = null;
+                if (node.IsHost)
+                {
+                    bool returning = !string.IsNullOrEmpty(c.PlayerId) && KnownPlayers.ContainsKey(c.PlayerId);
+                    if (!string.IsNullOrEmpty(c.PlayerId)) KnownPlayers[c.PlayerId] = c.Slot;
+                    Toasts.Show((string.IsNullOrEmpty(name) || name == "Gungeoneer" ? "Your friend" : name) + (returning ? " is back" : " joined"));
+                }
+                else
+                {
+                    Status = "Connected";
+                    Toasts.Show(Reconnecting ? "Reconnected" : "Connected");
+                    Reconnecting = false;
+                    Toasts.Banner = null;
+                }
                 PeerJoined?.Invoke(c);
             };
             node.Disconnected += (c, why) =>
             {
                 Plugin.Log.LogInfo($"Peer left: slot {c.Slot} ({why})");
                 PeerLeft?.Invoke(c, why);
-                if (!node.IsHost) Leave("Host connection lost: " + why);
+                if (node == null) return;
+                string who = string.IsNullOrEmpty(c.Tag as string) || (string)c.Tag == "Gungeoneer" ? (node.IsHost ? "Your friend" : "The host") : (string)c.Tag;
+                if (node.IsHost)
+                {
+                    bool quit = why == "left" || why == "session closed" || why == "game closed";
+                    Toasts.Show(who + (quit ? " left" : " lost connection"), 5f, !quit);
+                    return;
+                }
+                // Client: never give up on its own. Keep everything and keep trying to get back.
+                bool hostQuit = why == "session closed" || why == "game closed";
+                if (!leaving && node.LastHost != null && why != "left")
+                {
+                    Reconnecting = true;
+                    Status = "Reconnecting";
+                    Toasts.Banner = hostQuit ? "The host closed the game. Waiting for them to come back..." : "Connection lost. Reconnecting...";
+                    nextReconnect = Now + 1.0;
+                }
+                else Leave("Disconnected");
             };
-            node.Rejected += why => { Plugin.Log.LogWarning("Join rejected: " + why); Leave("Could not join: " + why); };
+            node.Rejected += why =>
+            {
+                Plugin.Log.LogWarning("Join rejected: " + why);
+                if (Reconnecting && why == "no answer from host") { nextReconnect = Now + 2.0; return; } // keep trying
+                Toasts.Show(why == "no answer from host" ? "Could not reach the host. Ask for the invite code again, or send your reply code." : why, 7f, true);
+                Leave(why);
+            };
             node.Message += (c, ch, data, d) =>
             {
                 if (handlers.TryGetValue((Channel)ch, out var h))
@@ -237,15 +339,27 @@ namespace GungeonOnline.Session
                     Plugin.Log.LogInfo("Steam available: invites enabled");
                 }
             }
+            NoteMainTick();
             if (node == null) return;
             double now = Now;
             node.Poll(now);
+            if (node == null) return;
+            if (Reconnecting && !node.Connecting && node.Connections.Count == 0 && now >= nextReconnect)
+            {
+                node.Connect(node.LastHost, now, 6);
+                nextReconnect = now + 7.0;
+            }
             stun?.Update(now);
             if (stun != null && stun.Result != null && InviteCodeText == null)
             {
                 // Hosts behind UPnP keep the same port outside; otherwise the STUN-mapped port is the one to share.
                 InviteCodeText = InviteCode.Encode(stun.Result);
                 Plugin.Log.LogInfo("Invite code ready: " + InviteCodeText);
+                if (node.IsHost)
+                {
+                    try { GUIUtility.systemCopyBuffer = InviteCodeText; } catch { }
+                    Toasts.Show("Invite code copied: " + InviteCodeText + ". Paste it to your friend.", 7f);
+                }
             }
             for (int i = punchTargets.Count - 1; i >= 0; i--)
             {
@@ -262,9 +376,21 @@ namespace GungeonOnline.Session
             if (node != null) node.Flush(Now);
         }
 
+        /// <summary>Rejoin the last game (after a crash or restart).</summary>
+        public void RejoinLast()
+        {
+            var last = NetConfig.LastJoin.Value;
+            if (string.IsNullOrEmpty(last)) return;
+            if (last.StartsWith("steam:") && ulong.TryParse(last.Substring(6), out var id)) JoinSteam(new Steamworks.CSteamID(id));
+            else Join(last);
+        }
+
         public void Leave(string reason = null)
         {
             if (node == null) return;
+            leaving = true;
+            Reconnecting = false;
+            Toasts.Banner = null;
             var n = node;
             node = null;
             try { n.Dispose(); } catch { }
@@ -279,7 +405,9 @@ namespace GungeonOnline.Session
             if (reason != null) LastError = reason;
             Game.BackgroundRun.SessionActive = false;
             Plugin.Log.LogInfo("Session ended" + (reason != null ? ": " + reason : ""));
+            KnownPlayers.Clear();
             SessionEnded?.Invoke();
+            leaving = false;
         }
 
         void Fail(string msg)

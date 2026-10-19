@@ -11,10 +11,20 @@ namespace GungeonOnline.Session
     /// </summary>
     internal sealed class Lobby : MonoBehaviour
     {
-        const byte MsgChoice = 1, MsgRoster = 2;
+        const byte MsgChoice = 1, MsgRoster = 2, MsgAim = 3, MsgStyle = 4;
 
         public sealed class Entry { public string Prefab = ""; public string Name = ""; }
         public readonly Dictionary<int, Entry> Roster = new Dictionary<int, Entry>();
+
+        /// <summary>Each player's own aim assist settings, so every machine aims their copy the way they aim it.</summary>
+        public struct AimPrefs { public float Assist; public bool Beam; public bool Super; }
+        public static readonly Dictionary<int, AimPrefs> Aim = new Dictionary<int, AimPrefs>();
+        string sentAim;
+
+        /// <summary>Guest: the co-op style the host chose (-1 until it arrives).</summary>
+        public static int HostCoopStyle = -1;
+        int sentStyle = -1;
+        float nextAimCheck;
         string sentChoice;
         PlayerController lastLocal;
 
@@ -22,15 +32,17 @@ namespace GungeonOnline.Session
         {
             var s = NetSession.Instance;
             s.On(Channel.Lobby, OnMessage);
-            s.PeerJoined += c => { if (NetSession.IsHost) SendRoster(); else sentChoice = null; };
+            s.PeerJoined += c => { if (NetSession.IsHost) { SendRoster(); SendAllAim(c); sentStyle = -1; } else sentChoice = null; sentAim = null; };
             s.PeerLeft += (c, why) =>
             {
                 if (!NetSession.IsHost) return;
+                // During a run a player who drops stays in the game (their character waits for them).
+                if (!Game.SceneObjects.InBreach && GameManager.HasInstance && GameManager.Instance.Dungeon != null) return;
                 Roster.Remove(c.Slot);
                 PlayerSlots.Despawn(c.Slot);
                 SendRoster();
             };
-            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; PlayerSlots.Clear(); };
+            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); HostCoopStyle = -1; sentStyle = -1; PlayerSlots.Clear(); };
         }
 
         static string PrefabOf(PlayerController p)
@@ -74,6 +86,8 @@ namespace GungeonOnline.Session
                     }
                 }
             }
+            if (NetSession.IsHost && NetConfig.CoopStyle.Value != sentStyle) SendStyle();
+            if (Time.realtimeSinceStartup >= nextAimCheck && local != null) { nextAimCheck = Time.realtimeSinceStartup + 1f; CheckAim(); }
             // Spawn anyone we know about but have not spawned (our own player may have appeared late).
             if (local != null)
                 foreach (var kv in Roster)
@@ -81,7 +95,50 @@ namespace GungeonOnline.Session
                         PlayerSlots.SpawnRemote(kv.Key, kv.Value.Prefab);
         }
 
-        void SendRoster()
+        static AimPrefs MyAim()
+        {
+            var o = GameManager.Options;
+            bool mouse = false;
+            var me = PlayerSlots.Local;
+            try { if (me != null) mouse = BraveInput.GetInstanceForPlayer(me.PlayerIDX).IsKeyboardAndMouse(); } catch { }
+            // Mouse aim is already exact (it is sent as a direction); no assist on the other side either.
+            if (o == null || mouse) return new AimPrefs { Assist = 0f, Beam = false, Super = false };
+            bool super = false;
+            try { super = BraveInput.AutoAimMode == BraveInput.AutoAim.SuperAutoAim; } catch { } // no input instance yet at boot
+            return new AimPrefs { Assist = o.controllerAimAssistMultiplier, Beam = o.controllerBeamAimAssist, Super = super };
+        }
+
+        void CheckAim()
+        {
+            var a = MyAim();
+            string key = a.Assist.ToString("F2") + a.Beam + a.Super;
+            if (key == sentAim) return;
+            sentAim = key;
+            Aim[NetSession.LocalSlot] = a;
+            NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, AimMsg(NetSession.LocalSlot, a), Delivery.ReliableOrdered);
+        }
+
+        static byte[] AimMsg(int slot, AimPrefs a)
+        {
+            var w = new WireWriter(16);
+            w.U8(MsgAim); w.U8((byte)slot); w.F32(a.Assist); w.Bool(a.Beam); w.Bool(a.Super);
+            return w.ToArray();
+        }
+
+        void SendAllAim(Connection to)
+        {
+            foreach (var kv in Aim) if (kv.Key != to.Slot) to.Send((byte)Channel.Lobby, AimMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
+        }
+
+        void SendStyle()
+        {
+            sentStyle = NetConfig.CoopStyle.Value;
+            var w = new WireWriter(4);
+            w.U8(MsgStyle); w.U8((byte)sentStyle);
+            NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
+        }
+
+        public void SendRoster()
         {
             var w = new WireWriter(128);
             w.U8(MsgRoster);
@@ -94,6 +151,19 @@ namespace GungeonOnline.Session
         {
             var r = new WireReader(data, 0, data.Length);
             byte type = r.U8();
+            if (type == MsgStyle && !NetSession.IsHost) { int v = r.U8(); if (HostCoopStyle >= 0 && v != HostCoopStyle) Toasts.Show("The host switched to " + (v == 0 ? "Classic" : "Explore") + " co-op"); HostCoopStyle = v; return; }
+            if (type == MsgAim)
+            {
+                int slot = r.U8();
+                var a = new AimPrefs { Assist = r.F32(), Beam = r.Bool(), Super = r.Bool() };
+                if (NetSession.IsHost) slot = c.Slot;
+                if (slot == NetSession.LocalSlot) return;
+                Aim[slot] = a;
+                if (NetSession.IsHost)
+                    foreach (var o in NetSession.Instance.Node.Connections)
+                        if (o != c) o.Send((byte)Channel.Lobby, AimMsg(slot, a), Delivery.ReliableOrdered);
+                return;
+            }
             if (type == MsgChoice && NetSession.IsHost)
             {
                 Roster[c.Slot] = new Entry { Prefab = r.Str(), Name = r.Str() };

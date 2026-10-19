@@ -98,6 +98,13 @@ namespace GungeonOnline.Replication
             Applied++;
         }
 
+        /// <summary>Host: put a saved inventory back on a player (run backups).</summary>
+        public void Restore(PlayerController p, List<KeyValuePair<int, int>> guns, int current, List<int> passives, List<int> actives)
+        {
+            PickupSync.WithScope(() => Reconcile(p, false, guns, current, passives, actives));
+            lastSent.Clear();
+        }
+
         void Reconcile(PlayerController p, bool own, List<KeyValuePair<int, int>> guns, int current, List<int> passives, List<int> actives)
         {
             // Guns

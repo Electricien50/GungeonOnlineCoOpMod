@@ -7,10 +7,12 @@ namespace GungeonOnline.Net
     /// <summary>What a joining peer presents. Host rejects on any mismatch.</summary>
     public sealed class Handshake
     {
-        public const ushort ProtocolVersion = 1;
+        public const ushort ProtocolVersion = 2;
         public string ModVersion = "";
         public string GameHash = "";
         public string PlayerName = "";
+        /// <summary>Permanent per-install id, so a returning player gets their own slot back.</summary>
+        public string PlayerId = "";
     }
 
     /// <summary>
@@ -25,7 +27,9 @@ namespace GungeonOnline.Net
         public readonly Handshake Local;
         public IDatagramSocket Socket { get; private set; }
         public readonly List<Connection> Connections = new List<Connection>();
-        public double TimeoutSeconds = 10.0;
+        public double TimeoutSeconds = 20.0;
+        /// <summary>Host: pick a slot for a joining player id (returning players get theirs back). -1 = next free.</summary>
+        public Func<string, int> SlotForPlayer;
 
         public event Action<Connection> Connected;
         public event Action<Connection, string> Disconnected;
@@ -36,6 +40,7 @@ namespace GungeonOnline.Net
 
         // Client-side connect state
         EndPoint hostEp;
+        public EndPoint LastHost => hostEp;
         uint nonce;
         double nextConnectSend;
         double connectDeadline;
@@ -71,8 +76,14 @@ namespace GungeonOnline.Net
         }
 
         /// <summary>Drain the socket and process everything that arrived. Call right before the sim step.</summary>
+        double lastPoll = -1;
+
         public void Poll(double now)
         {
+            // Time this game spent frozen (a long load) is not the other side's silence: do not count it.
+            if (lastPoll >= 0 && now - lastPoll > 2.0)
+                foreach (var c in Connections) c.LastReceiveTime += now - lastPoll;
+            lastPoll = now;
             while (Socket.TryReceive(out var from, out var data))
             {
                 try { Handle(from, data, now); }
@@ -113,6 +124,12 @@ namespace GungeonOnline.Net
                 case PacketType.Connect:
                     if (IsHost) HandleConnect(from, ref r, now);
                     break;
+                case PacketType.KeepAlive:
+                    {
+                        var c = Find(from);
+                        if (c != null) c.LastReceiveTime = now;
+                        break;
+                    }
                 case PacketType.Accept:
                     if (!IsHost && Connecting && r.U32() == nonce)
                     {
@@ -148,6 +165,7 @@ namespace GungeonOnline.Net
             uint n = r.U32();
             ushort proto = r.U16();
             string mod = r.Str(), hash = r.Str(), name = r.Str();
+            string pid = r.Remaining > 0 ? r.Str() : "";
             var existing = Find(from);
             if (existing != null)
             {
@@ -155,22 +173,33 @@ namespace GungeonOnline.Net
                 Drop(existing, "reconnected", sendNotice: false); // same address, new session: replace
             }
             string reason = null;
-            if (proto != Handshake.ProtocolVersion) reason = $"protocol {proto} vs host {Handshake.ProtocolVersion}";
-            else if (mod != Local.ModVersion) reason = $"mod version {mod} vs host {Local.ModVersion}";
-            else if (hash != Local.GameHash) reason = "game version differs from the host's";
-            int slot = reason == null ? FreeSlot() : -1;
-            if (reason == null && slot < 0) reason = "session is full";
+            if (proto != Handshake.ProtocolVersion) reason = $"Your friend has a different version of the mod. Both of you need the same version.";
+            else if (mod != Local.ModVersion) reason = $"Different mod versions (host {Local.ModVersion}, you {mod}). Both of you need the same version.";
+            else if (hash != Local.GameHash) reason = "Your game version is different from the host's. Update the game on both PCs.";
+            int slot = -1;
+            if (reason == null)
+            {
+                int wanted = SlotForPlayer != null ? SlotForPlayer(pid) : -1;
+                slot = wanted > 0 && !SlotTaken(wanted) ? wanted : FreeSlot();
+            }
+            if (reason == null && slot < 0) reason = "The game is full.";
             if (reason != null)
             {
                 w.Reset(); w.U16(Packet.Magic); w.U8((byte)PacketType.Reject); w.U32(n); w.Str(reason);
                 Socket.SendTo(from, w.Buffer, w.Length);
                 return;
             }
-            var c = new Connection(from, slot) { LastReceiveTime = now, Tag = name };
+            var c = new Connection(from, slot) { LastReceiveTime = now, Tag = name, PlayerId = pid };
             Connections.Add(c);
             acceptedNonces[Key(from)] = n;
             SendAccept(from, n, slot);
             Connected?.Invoke(c);
+        }
+
+        bool SlotTaken(int s)
+        {
+            foreach (var c in Connections) if (c.Slot == s) return true;
+            return false;
         }
 
         int FreeSlot()
@@ -193,7 +222,7 @@ namespace GungeonOnline.Net
         void SendConnect()
         {
             w.Reset(); w.U16(Packet.Magic); w.U8((byte)PacketType.Connect); w.U32(nonce); w.U16(Handshake.ProtocolVersion);
-            w.Str(Local.ModVersion); w.Str(Local.GameHash); w.Str(Local.PlayerName);
+            w.Str(Local.ModVersion); w.Str(Local.GameHash); w.Str(Local.PlayerName); w.Str(Local.PlayerId);
             Socket.SendTo(hostEp, w.Buffer, w.Length);
         }
 

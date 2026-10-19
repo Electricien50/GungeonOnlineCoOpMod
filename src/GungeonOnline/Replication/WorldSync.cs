@@ -72,7 +72,12 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(AIActor), "Start"), prefix: new HarmonyMethod(t, nameof(ActorStartPrefix)));
             // Boss death: the host kills the remaining enemies and their deaths replicate; the client must not do it itself.
             h.Patch(AccessTools.Method(typeof(BossKillCam), "KillAllEnemies"), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
+            // Client: erasing its own copy of the floor's boss must not start a boss kill cam (it froze the player).
+            h.Patch(AccessTools.Method(typeof(GameUIRoot), nameof(GameUIRoot.TriggerBossKillCam)), prefix: new HarmonyMethod(t, nameof(KillCamPrefix)));
         }
+
+        static bool erasing;
+        static bool KillCamPrefix() => !erasing;
 
         void Awake() { Instance = this; }
 
@@ -305,6 +310,15 @@ namespace GungeonOnline.Replication
         // ---------------- Client ----------------
 
         /// <summary>Client: called by RunSync once a floor finished generating.</summary>
+        /// <summary>Client: after a reconnect on the same floor, ask the host for everything again.</summary>
+        public void ResendReady()
+        {
+            if (!IsClient || !FloorReady) return;
+            lastSnapSeq = 0; // the host may have restarted its numbering
+            w.Reset(); w.U8(EvFloorReady); w.I32(GameManager.Instance.CurrentRunSeed);
+            NetSession.Instance.Node.Broadcast((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
+        }
+
         public void OnFloorLoaded()
         {
             if (!IsClient) return;
@@ -315,9 +329,13 @@ namespace GungeonOnline.Replication
             {
                 if (a == null || a.GetComponent<PlayerController>() != null) continue;
                 if (a.CompanionOwner != null || a.GetComponent<CompanionController>() != null) continue; // companions are per machine
-                a.EraseFromExistence(true);
+                erasing = true;
+                try { a.EraseFromExistence(true); }
+                finally { erasing = false; }
                 removed++;
             }
+            // A kill cam left over from an earlier floor would keep the player frozen ("bossKillCam" input lock).
+            foreach (var cam in Object.FindObjectsOfType<BossKillCam>()) if (cam) cam.ForceCancelSequence();
             FloorReady = true;
             w.Reset(); w.U8(EvFloorReady); w.I32(GameManager.Instance.CurrentRunSeed);
             NetSession.Instance.Node.Broadcast((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
@@ -329,6 +347,8 @@ namespace GungeonOnline.Replication
         public void OnFloorUnloading()
         {
             FloorReady = false;
+            PlayerSync.Instance?.ResetTracks();
+            ProjectileSync.Instance?.OnFloorChanged();
             Game.SecondFightLock.Reset();
             PickupSync.Instance?.OnFloorChanged();
             ShopSync.Instance?.OnFloorChanged();
@@ -394,6 +414,7 @@ namespace GungeonOnline.Replication
                     PickupSync.Instance?.SendAllTo(c);
                     ShopSync.Instance?.SendAllTo(c);
                     InventorySync.Instance?.ForceResend();
+                    VitalsSync.Instance?.ForceResend();
                     Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready");
                 }
                 return;

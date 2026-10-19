@@ -14,7 +14,9 @@ namespace GungeonOnline.Game
     /// </summary>
     internal sealed class RunSync : MonoBehaviour
     {
-        const byte MsgLoadLevel = 1;
+        const byte MsgLoadLevel = 1, MsgRejoin = 2;
+        /// <summary>Index of the floor currently loaded (both machines).</summary>
+        public static int CurrentIndex = -1;
         public static RunSync Instance { get; private set; }
 
         static bool clientAllowed;
@@ -51,16 +53,40 @@ namespace GungeonOnline.Game
             var gm = GameManager.Instance;
             if (NetSession.IsHost)
             {
-                if (!gm.IsSeeded)
+                // Everyone must have picked a character before the run starts.
+                if (SceneObjects.InBreach)
+                {
+                    var lobby = FindObjectOfType<Lobby>();
+                    foreach (var c in NetSession.Instance.Node.Connections)
+                        if (lobby == null || !lobby.Roster.ContainsKey(c.Slot) || string.IsNullOrEmpty(lobby.Roster[c.Slot].Prefab))
+                        {
+                            Toasts.Show("Waiting for your friend to pick a character", 4f, true);
+                            GM.Field("m_loadingLevel").SetValue(false);
+                            if (Pixelator.Instance) Pixelator.Instance.FadeToBlack(0.2f, true);
+                            return false;
+                        }
+                }
+                var resume = RunBackup.PendingResume;
+                if (resume != null && SceneObjects.InBreach)
+                {
+                    // Resuming a saved run: jump straight to the saved floor with the saved seed.
+                    if (gm.CurrentRunSeed != resume.Seed) gm.CurrentRunSeed = resume.Seed;
+                    GM.Field("nextLevelIndex").SetValue(resume.FloorIndex);
+                    Plugin.Log.LogInfo($"RunSync: resuming run at floor index {resume.FloorIndex}");
+                }
+                else if (!gm.IsSeeded)
                 {
                     int seed = Random.Range(1, int.MaxValue);
                     gm.CurrentRunSeed = seed;
                     Plugin.Log.LogInfo("RunSync: run seed " + seed);
                 }
+                int index = GM.Field("nextLevelIndex").GetValue<int>();
+                ReseedForFloor(gm.CurrentRunSeed, index);
+                CurrentIndex = index;
                 var w = new WireWriter(64);
                 w.U8(MsgLoadLevel);
                 w.I32(gm.CurrentRunSeed);
-                w.I32(GM.Field("nextLevelIndex").GetValue<int>());
+                w.I32(index);
                 w.Str(gm.InjectedLevelName ?? "");
                 Replication.WorldSync.Instance?.OnFloorUnloading();
                 NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
@@ -73,15 +99,85 @@ namespace GungeonOnline.Game
             return false;
         }
 
+        /// <summary>
+        /// Floor generation reseeded per floor, so floor N depends only on (run seed, N). A player who restarts the
+        /// game mid-run and rejoins builds exactly the floor the host is on.
+        /// </summary>
+        static void ReseedForFloor(int seed, int index)
+        {
+            unchecked { BraveRandom.InitializeWithSeed(seed * 31 + index * 7919 + 17); }
+        }
+
+        /// <summary>Host: a player came back mid-run. Bring them to this floor (or just re-sync if they never left it).</summary>
+        public void SendRejoin(Connection c)
+        {
+            if (!NetSession.IsHost || CurrentIndex < 0 || SceneObjects.InBreach) return;
+            var gm = GameManager.Instance;
+            var w = new WireWriter(96);
+            w.U8(MsgRejoin);
+            w.I32(gm.CurrentRunSeed);
+            w.I32(CurrentIndex);
+            w.Str(gm.InjectedLevelName ?? "");
+            var lobby = FindObjectOfType<Lobby>();
+            w.Str(lobby != null && lobby.Roster.TryGetValue(c.Slot, out var e) ? e.Prefab : "");
+            c.Send((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
+            Plugin.Log.LogInfo($"RunSync: sent rejoin (floor index {CurrentIndex}) to slot {c.Slot}");
+        }
+
         void OnControl(Connection c, byte[] data, Delivery d)
         {
             var r = new WireReader(data, 0, data.Length);
-            if (r.U8() != MsgLoadLevel || NetSession.IsHost) return;
+            byte type = r.U8();
+            if (NetSession.IsHost) return;
+            if (type == MsgRejoin) { OnRejoin(ref r); return; }
+            if (type != MsgLoadLevel) return;
             int seed = r.I32();
             int index = r.I32();
             string injected = r.Str();
+            LoadFloor(seed, index, injected);
+        }
+
+        void OnRejoin(ref WireReader r)
+        {
+            int seed = r.I32();
+            int index = r.I32();
+            string injected = r.Str();
+            string prefab = r.Str();
+            var gm = GameManager.Instance;
+            var ws = Replication.WorldSync.Instance;
+            // Already on our way there (a load can take longer than the host's resend interval).
+            if (rejoining || gm.IsLoadingLevel || Dungeon.IsGenerating) return;
+            if (!SceneObjects.InBreach && gm.CurrentRunSeed == seed && CurrentIndex == index && ws != null && ws.FloorReady)
+            {
+                // Short drop: we never left this floor. Just ask the host for a full refresh.
+                Plugin.Log.LogInfo("RunSync: rejoined on the same floor, refreshing");
+                ws.ResendReady();
+                return;
+            }
+            Plugin.Log.LogInfo($"RunSync: rejoining the run on floor index {index}");
+            Toasts.Show("Rejoining your run...", 5f);
+            rejoining = true;
+            StartCoroutine(RejoinFlow(seed, index, injected, prefab));
+        }
+
+        static bool rejoining;
+
+        System.Collections.IEnumerator RejoinFlow(int seed, int index, string injected, string prefab)
+        {
+            // Back in the Breach after a restart: become the same character, then go straight to the host's floor.
+            if (GameManager.Instance.PrimaryPlayer == null && !string.IsNullOrEmpty(prefab))
+                yield return StartCoroutine(CharacterPicker.Pick(prefab));
+            float giveUp = Time.realtimeSinceStartup + 20f;
+            while (GameManager.Instance.PrimaryPlayer == null && Time.realtimeSinceStartup < giveUp) yield return null;
+            LoadFloor(seed, index, injected);
+        }
+
+        void LoadFloor(int seed, int index, string injected)
+        {
             var gm = GameManager.Instance;
             if (gm.CurrentRunSeed != seed) gm.CurrentRunSeed = seed;
+            ReseedForFloor(seed, index);
+            CurrentIndex = index;
             GM.Field("nextLevelIndex").SetValue(index);
             gm.InjectedLevelName = injected;
             GM.Field("m_loadingLevel").SetValue(false);
@@ -94,8 +190,31 @@ namespace GungeonOnline.Game
             if (fromFoyer) Game.SceneObjects.Breach.OnDepartedFoyer();
         }
 
+        readonly System.Collections.Generic.Dictionary<Connection, float> lastRejoin = new System.Collections.Generic.Dictionary<Connection, float>();
+
+        /// <summary>
+        /// Host: anyone connected but not ready on this floor (joined while we were loading, came back after a
+        /// crash, missed the load message) is sent the rejoin again until they are on the floor with us.
+        /// </summary>
+        void BringStragglers()
+        {
+            if (!NetSession.Active || !NetSession.IsHost || CurrentIndex < 0 || SceneObjects.InBreach) return;
+            if (GameManager.Instance.IsLoadingLevel || GameManager.Instance.Dungeon == null || Dungeon.IsGenerating) return;
+            var ws = Replication.WorldSync.Instance;
+            if (ws == null) return;
+            float now = Time.realtimeSinceStartup;
+            foreach (var c in NetSession.Instance.Node.Connections)
+            {
+                if (ws.IsReady(c)) continue;
+                if (lastRejoin.TryGetValue(c, out var t) && now - t < 15f) continue;
+                lastRejoin[c] = now;
+                SendRejoin(c);
+            }
+        }
+
         void Update()
         {
+            BringStragglers();
             // Every floor is a new Dungeon object, but all floors load into the same scene, so key on the dungeon.
             if (!GameManager.HasInstance || GameManager.Instance.Dungeon == null || Dungeon.IsGenerating || GameManager.Instance.IsLoadingLevel) return;
             if (GameManager.Instance.Dungeon.data == null || GameManager.Instance.Dungeon.data.rooms == null) return;
@@ -104,6 +223,9 @@ namespace GungeonOnline.Game
             lastScene = scene;
             LastFingerprint = Fingerprint();
             if (NetSession.Active && !NetSession.IsHost) Replication.WorldSync.Instance?.OnFloorLoaded();
+            if (!SceneObjects.InBreach) rejoining = false;
+            if (NetSession.Active && NetSession.IsHost && !SceneObjects.InBreach) RunBackup.OnHostFloorReady();
+            if (SceneObjects.InBreach) CurrentIndex = -1;
             Plugin.Log.LogInfo("FLOOR " + scene + " " + LastFingerprint);
             var dir = System.Environment.GetEnvironmentVariable("GO_RUN_DIR");
             if (dir != null)

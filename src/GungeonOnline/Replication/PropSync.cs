@@ -17,7 +17,7 @@ namespace GungeonOnline.Replication
     internal sealed class PropSync : MonoBehaviour
     {
         public static PropSync Instance { get; private set; }
-        const byte EvMinor = 80, EvMajor = 81, EvFlip = 82, EvCarts = 83;
+        const byte EvMinor = 80, EvMajor = 81, EvFlip = 82, EvCarts = 83, EvElevator = 84;
 
         static bool scope;
         static bool IsClient => NetSession.Active && !NetSession.IsHost;
@@ -25,7 +25,7 @@ namespace GungeonOnline.Replication
 
         List<MineCartController> carts;
         float nextCarts;
-        public int Breaks, Flips, CartUpdates;
+        public int Breaks, Flips, CartUpdates, Elevators;
         readonly WireWriter w = new WireWriter(512);
 
         public static void Install(Harmony h)
@@ -37,6 +37,22 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(MajorBreakable), nameof(MajorBreakable.Break)), prefix: new HarmonyMethod(t, nameof(ClientBlock)), postfix: new HarmonyMethod(t, nameof(MajorPost)));
             h.Patch(AccessTools.Method(typeof(FlippableCover), nameof(FlippableCover.Flip), new[] { typeof(DungeonData.Direction) }),
                 prefix: new HarmonyMethod(t, nameof(ClientBlock)), postfix: new HarmonyMethod(t, nameof(FlipPost)));
+            // The exit elevator leaves when the host's game sees everyone inside; the guest's elevator follows it,
+            // so a guest whose copy of the players lines up a little differently is never left standing in it.
+            h.Patch(AccessTools.Method(typeof(ElevatorDepartureController), nameof(ElevatorDepartureController.DoDeparture)),
+                prefix: new HarmonyMethod(t, nameof(ClientBlock)), postfix: new HarmonyMethod(t, nameof(ElevatorPost)));
+            h.Patch(AccessTools.Method(typeof(ElevatorDepartureController), nameof(ElevatorDepartureController.DoCryoDeparture)),
+                prefix: new HarmonyMethod(t, nameof(ClientBlock)), postfix: new HarmonyMethod(t, nameof(CryoPost)));
+        }
+
+        static void ElevatorPost(ElevatorDepartureController __instance)
+        {
+            if (IsHostSession && !scope && Instance) { Instance.SendAt(EvElevator, __instance.transform.position, 0); Instance.Elevators++; }
+        }
+
+        static void CryoPost(ElevatorDepartureController __instance, bool playerless)
+        {
+            if (IsHostSession && !scope && Instance && !playerless) { Instance.SendAt(EvElevator, __instance.transform.position, 1); Instance.Elevators++; }
         }
 
         void Awake() { Instance = this; }
@@ -139,6 +155,9 @@ namespace GungeonOnline.Replication
                 var p = new Vector2(r.F32(), r.F32());
                 if (i >= list.Count || !list[i]) continue;
                 var cart = list[i];
+                // The cart you ride is yours to drive, like your own player; the host's copy is corrected through you.
+                var me = PlayerSlots.Local;
+                if (me && me.currentMineCart == cart) continue;
                 if (((Vector2)cart.transform.position - p).sqrMagnitude < 0.0025f) continue;
                 cart.transform.position = new Vector3(p.x, p.y, cart.transform.position.z);
                 if (cart.specRigidbody) cart.specRigidbody.Reinitialize();
@@ -167,6 +186,13 @@ namespace GungeonOnline.Replication
                         {
                             var b = Nearest(StaticReferenceManager.AllMajorBreakables, p, x => !x.IsDestroyed);
                             if (b) { b.Break(Vector2.zero); Breaks++; }
+                            break;
+                        }
+                    case EvElevator:
+                        {
+                            var e = Nearest(SceneObjects.All<ElevatorDepartureController>(), p, x => true);
+                            if (e) { if (extra == 1) e.DoCryoDeparture(false); else e.DoDeparture(); Elevators++; }
+                            else Plugin.Log.LogWarning("PropSync: no elevator at " + p);
                             break;
                         }
                     case EvFlip:

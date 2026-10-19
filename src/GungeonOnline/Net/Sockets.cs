@@ -148,6 +148,22 @@ namespace GungeonOnline.Net
 
 namespace GungeonOnline.Net
 {
+    /// <summary>Test-only: drops every datagram in and out while <see cref="Dropping"/> says so (simulated outage).</summary>
+    public sealed class OutageSocket : IDatagramSocket
+    {
+        readonly IDatagramSocket inner;
+        readonly System.Func<bool> dropping;
+        public OutageSocket(IDatagramSocket inner, System.Func<bool> dropping) { this.inner = inner; this.dropping = dropping; }
+        public System.Net.EndPoint LocalEndPoint => inner.LocalEndPoint;
+        public void SendTo(System.Net.EndPoint to, byte[] buf, int len) { if (!dropping()) inner.SendTo(to, buf, len); }
+        public bool TryReceive(out System.Net.EndPoint from, out byte[] data)
+        {
+            while (inner.TryReceive(out from, out data)) if (!dropping()) return true;
+            return false;
+        }
+        public void Dispose() => inner.Dispose();
+    }
+
     /// <summary>
     /// Several sockets behind one: receives from all, sends through whichever owns the address type.
     /// Lets one host accept Steam friends (Steam P2P) and GOG/Epic players (UDP) in the same session.

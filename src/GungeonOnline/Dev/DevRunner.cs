@@ -49,14 +49,228 @@ namespace GungeonOnline.Dev
             }
         }
 
+        float doorSince = -1f;
+        int doorStep;
+
+        /// <summary>
+        /// GO_DOOR_TEST=1: the real Breach door path. 6 s after both players exist the friend walks into the Gungeon
+        /// door (must be refused), 6 s later the host walks in (must start the run for both).
+        /// </summary>
+        void DoorTest(float t)
+        {
+            if (doorStep >= 2 || System.Environment.GetEnvironmentVariable("GO_DOOR_TEST") != "1") return;
+            if (!Game.SceneObjects.InBreach || GameManager.Instance.AllPlayers.Length < 2 || Game.PlayerSlots.Local == null) return;
+            if (doorSince < 0) doorSince = t;
+            bool host = Session.NetSession.IsHost;
+            float due = host ? 12f : 6f;
+            if (t - doorSince < due) return;
+            doorStep = 2;
+            FoyerGungeonDoor door = null;
+            foreach (var d in Object.FindObjectsOfType<FoyerGungeonDoor>())
+                if (d && !d.LoadsCharacterSelect && !d.ReturnToFoyerFromTutorial && !d.LoadsCustomLevel) { door = d; break; }
+            if (door == null) { Plugin.Log.LogWarning("Harness: no Gungeon door found"); return; }
+            Plugin.Log.LogInfo("Harness: walking into the Gungeon door as " + (host ? "host" : "client"));
+            HarmonyLib.AccessTools.Method(typeof(FoyerGungeonDoor), "OnTriggered").Invoke(door, new object[] { Game.PlayerSlots.Local.specRigidbody, door.specRigidbody, null });
+        }
+
+        float tourT0 = -1f;
+        int tourStep;
+
+        /// <summary>GO_UI_TOUR=1: in the Breach, step through the online menu screens and the pause menu, a screenshot each.</summary>
+        void UiTour(float t)
+        {
+            if (tourStep >= 99 || System.Environment.GetEnvironmentVariable("GO_UI_TOUR") != "1") return;
+            if (!Game.SceneObjects.InBreach || GameManager.Instance.AllPlayers.Length < 2 || Game.PlayerSlots.Local == null) return;
+            if (tourT0 < 0) tourT0 = t + 3f;
+            float g = t - tourT0;
+            var menu = Session.OnlineMenu.Instance;
+            bool host = Session.NetSession.IsHost;
+            string[] plan = host
+                ? new[] { "Home:0", "Host:0", "Session:0", "Settings:3", "Settings:0", "pause", "close" }
+                : new[] { "Join:0", "Session:0", "Settings:4", "close", "close", "close", "close" };
+            int step = (int)(g / 2.5f);
+            if (g < 0 || step >= plan.Length) { if (step >= plan.Length) { tourStep = 99; menu?.Close(); GameManager.Instance.Unpause(); } return; }
+            float within = g - step * 2.5f;
+            string what = plan[step];
+            if (within < 0.1f || tourStep != step + 1)
+            {
+                if (tourStep != step + 1)
+                {
+                    tourStep = step + 1;
+                    if (what == "pause") { menu?.Close(); GameManager.Instance.Pause(); }
+                    else if (what == "close") { menu?.Close(); GameManager.Instance.Unpause(); }
+                    else { var p = what.Split(':'); menu?.ShowForHarness(p[0], int.Parse(p[1])); }
+                    shotTaken = false;
+                }
+            }
+            if (!shotTaken && within > 1.2f && what != "close")
+            {
+                shotTaken = true;
+                var dir = System.Environment.GetEnvironmentVariable("GO_RUN_DIR") ?? ".";
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "ui-" + step + "-" + what.Replace(":", "") + ".png"));
+            }
+        }
+        bool shotTaken;
+
+        float galleryT0 = -1f;
+        int galleryShot = -1;
+        int galleryWarp;
+
+        /// <summary>
+        /// GO_STYLE_GALLERY=1: once the floor is ready, players stand close (name tags), then far apart (locator),
+        /// cycling the five styles of each and saving a screenshot of every one on both machines.
+        /// </summary>
+        void StyleGallery(float t)
+        {
+            if (System.Environment.GetEnvironmentVariable("GO_STYLE_GALLERY") != "1") return;
+            var ws = Replication.WorldSync.Instance;
+            var me = Game.PlayerSlots.Local;
+            if (ws == null || me == null || Game.SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel) return;
+            if (Session.NetSession.IsHost ? ws.ReadyPeers == 0 : !ws.FloorReady) return;
+            if (galleryT0 < 0) galleryT0 = t;
+            float g = t - galleryT0;
+            var gm = GameManager.Instance;
+            if (Session.NetSession.IsHost && galleryWarp == 0 && g > 3f)
+            {
+                galleryWarp = 1;
+                Vector2 c = me.CenterPosition;
+                foreach (var p in gm.AllPlayers) if (p) p.healthHaver.IsVulnerable = false;
+                foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) kv.Value.WarpToPoint(c + new Vector2(3.5f, -0.5f));
+                Plugin.Log.LogInfo("Harness: gallery, players side by side");
+            }
+            if (Session.NetSession.IsHost && galleryWarp == 1 && g > 38f)
+            {
+                galleryWarp = 2;
+                Vector2 c = me.CenterPosition;
+                Dungeonator.RoomHandler far = null; float best = 0;
+                foreach (var room in gm.Dungeon.data.rooms)
+                {
+                    float d = (room.GetCenterCell().ToVector2() - c).magnitude;
+                    if (d > best && d < 45f) { best = d; far = room; }
+                }
+                if (far != null)
+                    foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) kv.Value.WarpToPoint(far.GetCenterCell().ToVector2());
+                Plugin.Log.LogInfo("Harness: gallery, players far apart");
+            }
+            // Styles: name tags 6..21 s (players close), locators 30..45 s (players apart). 3 s each, shot at +2 s.
+            int phase = g >= 6f && g < 36f ? 0 : g >= 42f && g < 57f ? 1 : -1;
+            if (phase < 0) { Session.NetConfig.LocatorStyle.Value = 0; Session.NetConfig.NameTagStyle.Value = 0; return; }
+            float local = g - (phase == 0 ? 6f : 42f);
+            int style = 1 + Mathf.Min(phase == 0 ? 9 : 4, (int)(local / 3f));
+            Session.NetConfig.NameTagStyle.Value = phase == 0 ? style : 0;
+            Session.NetConfig.LocatorStyle.Value = phase == 1 ? style : 0;
+            int shotId = phase * 10 + style;
+            if (local - (style - 1) * 3f >= 2f && galleryShot != shotId)
+            {
+                galleryShot = shotId;
+                var dir = System.Environment.GetEnvironmentVariable("GO_RUN_DIR") ?? ".";
+                string file = (phase == 0 ? "tag" : "loc") + style + ".png";
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, file));
+                Plugin.Log.LogInfo("Harness: gallery shot " + file);
+            }
+        }
+
+        int elevStep;
+        float elevAt = -1f;
+        ElevatorDepartureController elev;
+
+        /// <summary>
+        /// GO_ELEVATOR_TEST=1 (host): once the guest is ready on the floor, bring both players to the exit elevator
+        /// (it arrives when someone is near), then into it; vanilla decides the departure and the guest must follow.
+        /// </summary>
+        void ElevatorTest(float t)
+        {
+            if (elevStep >= 3 || !Session.NetSession.IsHost || System.Environment.GetEnvironmentVariable("GO_ELEVATOR_TEST") != "1") return;
+            var ws = Replication.WorldSync.Instance;
+            if (ws == null || ws.ReadyPeers == 0 || Game.SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel) return;
+            if (elevAt < 0) { elevAt = t + 5f; return; }
+            if (t < elevAt) return;
+            var gm = GameManager.Instance;
+            if (elevStep == 0)
+            {
+                foreach (var e in Game.SceneObjects.All<ElevatorDepartureController>()) { elev = e; break; }
+                if (elev == null) { Plugin.Log.LogWarning("Harness: no exit elevator"); elevStep = 3; return; }
+                int k = 0;
+                foreach (var p in gm.AllPlayers) if (p) { p.healthHaver.IsVulnerable = false; p.WarpToPoint((Vector2)elev.spawnTransform.position + new Vector2(k * 1.5f - 0.75f, -4f)); k++; }
+                Plugin.Log.LogInfo("Harness: players at the exit elevator");
+                elevStep = 1; elevAt = t + 8f;
+                return;
+            }
+            if (elevStep == 1)
+            {
+                var floor = elev.elevatorFloor.GetComponent<SpeculativeRigidbody>();
+                Vector2 c = floor ? floor.UnitCenter : (Vector2)elev.spawnTransform.position;
+                int k = 0;
+                foreach (var p in gm.AllPlayers) if (p) { p.WarpToPoint(c + new Vector2(k * 0.6f - 0.6f, -0.6f)); k++; }
+                Plugin.Log.LogInfo("Harness: players stepped into the elevator");
+                elevStep = 2; elevAt = t + 10f;
+                return;
+            }
+            Plugin.Log.LogWarning("Harness: elevator did not leave within 10 s");
+            elevStep = 3;
+        }
+
+        int swapStep;
+        float swapSince = -1f;
+
+        /// <summary>
+        /// GO_SWAP_TEST=1 (client): 6 s after both players exist, take the Breach door back to character select,
+        /// pick the Convict, and check that the host sees the new character.
+        /// </summary>
+        void SwapTest(float t)
+        {
+            if (swapStep >= 2 || Session.NetSession.IsHost || System.Environment.GetEnvironmentVariable("GO_SWAP_TEST") != "1") return;
+            if (swapStep == 1)
+            {
+                if (Game.SceneObjects.InBreach && GameManager.Instance.PrimaryPlayer == null && !GameManager.Instance.IsLoadingLevel)
+                {
+                    swapStep = 2;
+                    System.Environment.SetEnvironmentVariable("GO_CHAR", "PlayerConvict");
+                    Plugin.Instance.StartCoroutine(QuickStart.Run());
+                    Plugin.Log.LogInfo("Harness: back at character select, picking the Convict");
+                }
+                return;
+            }
+            if (!Game.SceneObjects.InBreach || GameManager.Instance.AllPlayers.Length < 2 || Game.PlayerSlots.Local == null) return;
+            if (swapSince < 0) swapSince = t;
+            if (t - swapSince < 6f) return;
+            FoyerGungeonDoor door = null;
+            foreach (var d in Object.FindObjectsOfType<FoyerGungeonDoor>()) if (d && d.LoadsCharacterSelect) { door = d; break; }
+            if (door == null) { Plugin.Log.LogWarning("Harness: no character select door"); swapStep = 2; return; }
+            swapStep = 1;
+            Plugin.Log.LogInfo("Harness: walking into the character select door");
+            HarmonyLib.AccessTools.Method(typeof(FoyerGungeonDoor), "OnTriggered").Invoke(door, new object[] { Game.PlayerSlots.Local.specRigidbody, door.specRigidbody, null });
+        }
+
+        bool menuDone, pauseDone, pauseClosed;
+
+        void UiHooks(float t)
+        {
+            float m = EnvSec("GO_MENU_AT"), p = EnvSec("GO_PAUSE_AT");
+            if (!menuDone && m > 0 && t >= m) { menuDone = true; Session.OnlineMenu.Instance?.Open(); Plugin.Log.LogInfo("Harness: online menu opened"); }
+            if (menuDone && m > 0 && t >= m + 4 && Session.OnlineMenu.IsOpen) Session.OnlineMenu.Instance.Close();
+            if (!pauseDone && p > 0 && t >= p && GameManager.Instance.PrimaryPlayer != null) { pauseDone = true; GameManager.Instance.Pause(); Plugin.Log.LogInfo("Harness: pause menu opened"); }
+            if (pauseDone && !pauseClosed && t >= p + 4) { pauseClosed = true; GameManager.Instance.Unpause(); }
+        }
+
+        static float EnvSec(string k)
+        {
+            var v = System.Environment.GetEnvironmentVariable(k);
+            return v != null && float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : -1f;
+        }
+
         float floorSince = -1f;
         string floorScene;
 
         /// <summary>Harness host (GO_FLOOR_EVERY=seconds): move on to the next floor on a timer, re-run the fight setup on each.</summary>
+        bool holdFloor;
+        Dungeonator.RoomHandler classicRoom;
+        PlayerController classicOutside; // a test found what it needs on this floor: stop cycling
+
         void HostFloorCycle(float t)
         {
             var v = System.Environment.GetEnvironmentVariable("GO_FLOOR_EVERY");
-            if (v == null || !Session.NetSession.IsHost || Game.SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel) return;
+            if (v == null || holdFloor || !Session.NetSession.IsHost || Game.SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel) return;
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + GameManager.Instance.CurrentFloor;
             if (scene != floorScene) { floorScene = scene; floorSince = t; fightDone = false; fightAt = -1f; return; }
             if (!float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var every)) return;
@@ -67,6 +281,49 @@ namespace GungeonOnline.Dev
         }
 
         bool lowHpDone;
+        float pitAt = -1f;
+        bool pitDone, pitNone;
+        int pitFloor;
+
+        /// <summary>
+        /// GO_PIT_TEST=1: each machine walks its own player onto the middle of a real pit once the floor is ready
+        /// (client after 8 s, host after 20 s). Vanilla pit detection decides; the other machine must follow.
+        /// </summary>
+        void PitTest(float t)
+        {
+            if (System.Environment.GetEnvironmentVariable("GO_PIT_TEST") != "1") return;
+            // No pit on a floor: try again on the next one (run with GO_FLOOR_EVERY).
+            if (pitNone && GameManager.Instance.CurrentFloor != pitFloor) { pitNone = false; pitDone = false; pitAt = -1f; }
+            if (pitDone) return;
+            var ws = Replication.WorldSync.Instance;
+            var me = Game.PlayerSlots.Local;
+            if (!Session.NetSession.Active || Game.SceneObjects.InBreach || ws == null || me == null) return;
+            if (Session.NetSession.IsHost ? ws.ReadyPeers == 0 : !ws.FloorReady) return;
+            if (pitAt < 0) { pitAt = t + (Session.NetSession.IsHost ? 20f : 8f); return; }
+            if (t < pitAt) return;
+            pitDone = true;
+            var d = GameManager.Instance.Dungeon.data;
+            Vector2 mine = me.transform.position;
+            IntVector2 best = IntVector2.Zero; float bestD = float.MaxValue;
+            for (int x = 2; x < d.Width - 2; x++)
+                for (int y = 2; y < d.Height - 2; y++)
+                {
+                    bool all = true;
+                    for (int dx = -1; dx <= 1 && all; dx++)
+                        for (int dy = -1; dy <= 1 && all; dy++)
+                        {
+                            var c = d.cellData[x + dx][y + dy];
+                            all = c != null && c.type == Dungeonator.CellType.PIT && !c.fallingPrevented;
+                        }
+                    if (!all) continue;
+                    float dist = (new Vector2(x, y) - mine).sqrMagnitude;
+                    if (dist < bestD) { bestD = dist; best = new IntVector2(x, y); }
+                }
+            if (bestD == float.MaxValue) { Plugin.Log.LogWarning("Harness: no pit on this floor"); pitNone = true; pitFloor = GameManager.Instance.CurrentFloor; return; }
+            if (Session.NetSession.IsHost) holdFloor = true;
+            Plugin.Log.LogInfo($"Harness: stepping onto the pit at {best} as " + (Session.NetSession.IsHost ? "host" : "client"));
+            me.WarpToPoint(best.ToVector2() + new Vector2(0.5f, 0.2f));
+        }
 
         /// <summary>Harness client (GO_LOW_HP=1): once on a floor, drop to half a heart so the next hit kills.</summary>
         void ClientLowHp()
@@ -151,6 +408,50 @@ namespace GungeonOnline.Dev
                 Plugin.Log.LogInfo("Harness: warped players into the shop with 300 casings");
                 return;
             }
+            if (mode == "classic")
+            {
+                // GO_PULL_WHO=host|guest: who walks into the fight. The other one is left outside.
+                bool hostFights = System.Environment.GetEnvironmentVariable("GO_PULL_WHO") != "guest";
+                Dungeonator.RoomHandler fightRoom = null;
+                foreach (var room in gm.Dungeon.data.rooms)
+                {
+                    var list = room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear);
+                    if (list != null && list.Count >= 2 && room != gm.Dungeon.data.Entrance && !room.GetRoomName().Contains("Cart")) { fightRoom = room; break; }
+                }
+                if (fightRoom == null) { Plugin.Log.LogWarning("Harness: no fight room"); return; }
+                PlayerController fighter = null, outside = null;
+                foreach (var p in gm.AllPlayers)
+                {
+                    if (!p) continue;
+                    p.healthHaver.IsVulnerable = false;
+                    bool isHost = p == Game.PlayerSlots.Local;
+                    if (isHost == hostFights) fighter = p; else outside = p;
+                }
+                if (fighter == null || outside == null) return;
+                fighter.WarpToPoint(fightRoom.GetCenteredVisibleClearSpot(2, 2).ToVector2());
+                Plugin.Log.LogInfo($"Harness: CLASSIC {(hostFights ? "host" : "guest")} fights in {fightRoom.GetRoomName()}, the other waits outside");
+                classicRoom = fightRoom;
+                classicOutside = outside;
+                return;
+            }
+            if (mode == "cart")
+            {
+                var list = new System.Collections.Generic.List<MineCartController>();
+                foreach (var c in Game.SceneObjects.All<MineCartController>()) if (c && c.occupation != MineCartController.CartOccupationState.ENEMY) list.Add(c);
+                if (list.Count == 0) { Plugin.Log.LogWarning("Harness: no minecart on this floor"); return; }
+                int ci = 0;
+                foreach (var p in gm.AllPlayers)
+                {
+                    if (!p) continue;
+                    p.healthHaver.IsVulnerable = false;
+                    var cart = list[ci % list.Count];
+                    p.WarpToPoint(cart.specRigidbody.UnitCenter + new Vector2(ci == 0 ? -1.5f : 1.5f, -1.5f));
+                    ci++;
+                }
+                holdFloor = true;
+                Plugin.Log.LogInfo($"Harness: warped players next to minecarts ({list.Count} on this floor)");
+                return;
+            }
             if (mode == "boss")
             {
                 Dungeonator.RoomHandler bossRoom = null;
@@ -200,9 +501,21 @@ namespace GungeonOnline.Dev
             Application.targetFrameRate = DevEnv.Fps;
         }
 
+        bool updateErrorLogged;
+
         void Update()
         {
             if (!DevEnv.IsHarness) return;
+            try { HarnessUpdate(); }
+            catch (System.Exception e)
+            {
+                // Early boot frames: the game is not up yet. Log once, keep going.
+                if (!updateErrorLogged) { updateErrorLogged = true; Plugin.Log.LogInfo("Harness: status not ready yet (" + e.GetType().Name + ")"); }
+            }
+        }
+
+        void HarnessUpdate()
+        {
             NetProfiler.Frame();
             float t = Time.realtimeSinceStartup;
             Mute();
@@ -254,13 +567,16 @@ namespace GungeonOnline.Dev
                     var inv = Replication.InventorySync.Instance;
                     if (inv != null) net += $" inv[sent={inv.Sent} applied={inv.Applied} added={inv.Added} removed={inv.Removed}]";
                     var vs = Replication.VitalsSync.Instance;
-                    if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied}]";
+                    if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied} pits={vs.PitfallsApplied} cartRides={ScenarioRunner.CartRides} elevators={(Replication.PropSync.Instance != null ? Replication.PropSync.Instance.Elevators : 0)} stats={Replication.StatSync.Sent}/{Replication.StatSync.Applied} credits={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.META_CURRENCY) : -1)} kills={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.ENEMIES_KILLED) : -1)}]";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" hpR{kv.Key}={kv.Value.healthHaver.GetCurrentHealth()}";
                     if (gm.PrimaryPlayer != null) net += $" money={gm.PrimaryPlayer.carriedConsumables.Currency} guns={gm.PrimaryPlayer.inventory.AllGuns.Count} passives={gm.PrimaryPlayer.passiveItems.Count}";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" R{kv.Key}guns={kv.Value.inventory.AllGuns.Count} R{kv.Key}passives={kv.Value.passiveItems.Count}";
                     if (gm.PrimaryPlayer != null) net += $" ghost0={gm.PrimaryPlayer.IsGhost} dead0={gm.PrimaryPlayer.healthHaver.IsDead}";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" ghostR{kv.Key}={kv.Value.IsGhost} deadR{kv.Key}={kv.Value.healthHaver.IsDead}";
                     net += $" hp0={(gm.PrimaryPlayer != null ? gm.PrimaryPlayer.healthHaver.GetCurrentHealth() : -1)}";
+                    string rooms = "";
+                    foreach (var pl in gm.AllPlayers) if (pl) rooms += (pl == gm.PrimaryPlayer ? "me" : "them") + ":" + (pl.CurrentRoom != null ? pl.CurrentRoom.GetRoomName().Replace(" ", "_") : "-") + (pl.CurrentRoom != null && pl.CurrentRoom.IsSealed ? "(sealed)" : "") + ";";
+                    net += $" rooms[{rooms}] pulls={Camera.IndependentCamera.Pulls}";
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
                 string fp = Game.RunSync.Instance != null ? Game.RunSync.Instance.LastFingerprint : "-";
@@ -269,6 +585,13 @@ namespace GungeonOnline.Dev
                 if (Session.NetSession.Active && gm != null && gm.PrimaryPlayer != null)
                 {
                     string tr = $"TRACE t={t:F1} local={gm.PrimaryPlayer.transform.position.x:F2},{gm.PrimaryPlayer.transform.position.y:F2} st={gm.PrimaryPlayer.CurrentInputState}";
+                    if (gm.PrimaryPlayer.CurrentInputState != PlayerInputState.AllInput)
+                    {
+                        var lob = HarmonyLib.Traverse.Create(gm.PrimaryPlayer).Field("m_disableInput").Field("m_overrides").GetValue<System.Collections.IList>();
+                        string lk = "";
+                        if (lob != null) foreach (var o in lob) lk += HarmonyLib.Traverse.Create(o).Field("key").GetValue<string>() + ";";
+                        tr += $" ov=[{lk}] raw={HarmonyLib.Traverse.Create(gm.PrimaryPlayer).Field("m_inputState").GetValue()}";
+                    }
                     foreach (var kv in Game.PlayerSlots.Remotes)
                         if (kv.Value) tr += $" r{kv.Key}={kv.Value.transform.position.x:F2},{kv.Value.transform.position.y:F2} st={kv.Value.CurrentInputState} mv={BraveInput.GetInstanceForPlayer(kv.Value.PlayerIDX).ActiveActions.Move.Vector}";
                     Plugin.Log.LogInfo(tr);
@@ -286,7 +609,16 @@ namespace GungeonOnline.Dev
                     Game.SceneObjects.Breach.OnDepartedFoyer();
                 }
             }
+            UiDump.Tick();
+            StyleGallery(t);
+            UiTour(t);
+            DoorTest(t);
+            SwapTest(t);
+            if (elevStep == 2 && GameManager.Instance.IsLoadingLevel) { elevStep = 3; Plugin.Log.LogInfo("Harness: elevator left, next floor loading"); }
+            ElevatorTest(t);
+            PitTest(t);
             HostFloorCycle(t);
+            UiHooks(t);
             HostFightSetup(t);
             ClientLowHp();
             ClientTestBuy(t);

@@ -87,7 +87,7 @@ namespace GungeonOnline.Replication
 
         public void OnFloorChanged()
         {
-            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear();
+            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear(); lastRequest.Clear();
             copies.Clear(); copyIdByInstance.Clear(); clientChests.Clear(); chestIdByInstance.Clear();
         }
 
@@ -306,6 +306,9 @@ namespace GungeonOnline.Replication
                             copies.Remove(id);
                             break;
                         }
+                    case StatSync.EvStat:
+                        StatSync.Apply(ref r);
+                        break;
                     case EvGot when !NetSession.IsHost:
                         {
                             int slot = r.U8();

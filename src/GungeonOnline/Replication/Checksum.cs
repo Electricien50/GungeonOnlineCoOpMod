@@ -132,6 +132,13 @@ namespace GungeonOnline.Replication
             if (type == EvAliveSet && !NetSession.IsHost) { WorldSync.Instance?.KeepOnly(ReadIds(ref r)); return; }
             if (type != EvSummary || NetSession.IsHost || !SceneObjects.OnDungeonFloor) return;
 
+            // After a gap (a drop, a long load) summaries that were held up arrive together and describe the past:
+            // skip comparisons for two seconds, and only ever compare the newest summary of a frame.
+            float now = Time.realtimeSinceStartup;
+            if (now - lastSummaryAt > 2.5f) graceUntil = now + 2f;
+            lastSummaryAt = now;
+            if (now < graceUntil || Time.frameCount == lastCheckFrame) return;
+            lastCheckFrame = Time.frameCount;
             Checks++;
             var problems = new List<string>();
             int hostAlive = r.U16();
@@ -157,9 +164,10 @@ namespace GungeonOnline.Replication
                 if (myKey != key) problems.Add($"player {slot} state host=[{key}] mine=[{myKey}]");
                 // Positions are a frame or two apart by nature; only gross divergence counts.
                 float d = (hostPos - (Vector2)p.transform.position).magnitude;
-                if (d > 4f) problems.Add($"player {slot} position off by {d:F1}");
+                // Ghosts fly fast and pass through walls; their position is not part of the game state that matters.
+                if (d > 4f && !p.IsGhost) problems.Add($"player {slot} position off by {d:F1}");
             }
-            if (problems.Count == 0) { ConsecutiveClean++; return; }
+            if (problems.Count == 0) { ConsecutiveClean++; pendingProblems = 0; return; }
             // A single check can catch a change that is still in flight; act on two in a row.
             ConsecutiveClean = 0;
             pendingProblems++;
@@ -172,6 +180,8 @@ namespace GungeonOnline.Replication
         }
 
         int pendingProblems;
+        float lastSummaryAt = -10f, graceUntil;
+        int lastCheckFrame = -1;
 
         static List<uint> ReadIds(ref WireReader r)
         {

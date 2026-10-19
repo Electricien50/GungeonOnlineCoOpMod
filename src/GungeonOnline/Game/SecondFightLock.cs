@@ -16,7 +16,7 @@ namespace GungeonOnline.Game
         static RoomHandler fight;
         static bool busy;
 
-        static bool Enabled => Session.NetSession.Active && Session.NetSession.IsHost && Session.NetConfig.SecondFightLock.Value;
+        static bool Enabled => Session.NetSession.Active && Session.NetSession.IsHost && Session.NetConfig.CoopStyle.Value != 2;
 
         public static void Install(Harmony h)
         {

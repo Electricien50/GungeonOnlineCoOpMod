@@ -20,11 +20,15 @@ local co-op, so its gameplay result is already correct. What needs netplay-aware
 | Off-screen clamp | `CameraBoundsMovementRestrictor` blocks movement past the shared camera edge; ghosts are also pushed/warped back | Off (found in M2: it pinned the other player to the edge of each screen) |
 | Pause menu | `GameManager.PauseRaw` sets time scale 0 for the whole world | Opens locally, world keeps running, banner "game is still running". Config option `PauseFreezesEveryone` (default off) |
 | Ammonomicon, map | Local UI | Local UI on the machine that opened it; world keeps running |
-| NPC dialogue, shops, shrines, crest doors, Ark, etc. (≈40 scripts call `SetInputOverride` on the other player) | Freezes **both** players and moves the shared camera | Freezes only the player who interacted. Camera moves only on that player's screen. The partner keeps playing |
-| Dialogue UI | Text boxes over the NPC, option list on screen | Host runs the conversation with the talking player's input (already routed through their input device). Text box show/clear and option lists replicate to the talking player's screen only |
+| NPC dialogue, shops, shrines, crest doors | Freezes the talking player and takes over the shared screen (camera lock, letterbox, hidden HUD) | Freezes only the talking player. The camera lock, letterbox and hidden HUD happen only on that player's screen. The partner keeps playing |
+| Dialogue UI | Text boxes over the NPC, option list on screen | Every machine runs the conversation from the talking player's own input, so the outcome is the same everywhere; the response bar and option list show only on the talking player's screen. Items it gives come from the host |
 | Boss intros, boss kill cam | Gather both players, camera pan, slow motion | Kept for both: both players are gathered, both screens play the intro and kill cam, slow motion applies to the world |
 | Time-scale effects (Superhot, Sunglasses, table tech, boss deaths, Turbo/Challenge speed) | Global `Time.timeScale` | Host's time scale replicated; client applies the same scale |
-| Floor exit | Elevator requires both players | Kept |
+| Floor exit | Elevator requires both players | Kept. The host's game decides when everyone is inside; every other game's elevator leaves with it, so nobody is left standing in an elevator that left elsewhere |
+| Pit falls | Whoever falls takes half a heart and respawns at the edge | Decided by the falling player's own machine, like hits; the other machines play the same fall at the same pit and the damage is counted once |
+| Minecarts | Ride with interact | Same. The cart you ride moves on your screen without delay; the other machines follow the host's cart positions |
+| Aim assist | Read from the one options file for both players | Each player's own aim assist setting is used for their character on every machine, so shots go where they went on the owner's screen. Mouse aim has no assist anywhere |
+| Quick restart | Restarts the run for both | Off online (a toast explains). A new run starts from the Breach, so a stray press can never cost the run |
 | Pasts, Punchout, Resourceful Rat / Metal Gear Rat room, final sequences | Scripted, shared camera | Treated like boss intros: both gathered, both screens follow the script. Each gets its own scenario test (M6) |
 | Wallet (casings, keys) | Shared: P2 uses P1's `carriedConsumables` | Kept shared (vanilla co-op design). Host-owned, replicated to both HUDs |
 | Blanks, health, armor, guns, items | Per player | Per player, host-owned, replicated |
@@ -41,21 +45,26 @@ local co-op, so its gameplay result is already correct. What needs netplay-aware
 | Character choice | P2 forced to the Cultist | Any character for both, duplicates allowed |
 | Item pool and unlocks | One save | The host's save decides the item pool for the run |
 | Persistent progress | One save file | Each player's own save gets credit: Hegemony credits, kill counts, boss flags, unlock events replicated from the host to the guest's save |
-| Mid-run save, quick restart | One save | Mid-run save disabled in netplay; host quick restart restarts both |
+| Mid-run save | One save | Vanilla's mid-run save still happens on each machine. Gungeon Online's own run backup on the host restores both players after a crash (`Resume saved run`) |
 | Mouse users | P2 cursor handled by `GameCursorController` | Each machine handles its own cursor; aim sent as a vector |
 | Off-screen enemy logic on host | n/a | Verified: `tk2dSpriteAnimator` keeps animation time and events running off screen; only the sprite mesh update is skipped. Rooms the host cannot see simulate normally |
 
 ## Where these patches live
 
-- `Camera/IndependentCamera.cs`: camera ignore, no warp/clamp, screen shake routing.
-- `Game/InteractionScope.cs`: rewrites `SetInputOverride` calls on the other player to no-ops in netplay,
-  routes camera override calls (≈39 sites) to the involved player's screen, keeps boss-intro scripts global.
-- `Game/PauseScope.cs`: local pause, Ammonomicon, map.
-- `Game/ProgressSync.cs`: guest save credit.
-- `Replication/UiEvents.cs`: dialogue boxes, option lists, banners, notifications per owning player.
-- `Input/Rumble.cs`: local-only vibration.
+- `Camera/IndependentCamera.cs`: each machine's camera ignores the other players; no pull, warp or clamp toward them.
+- `Game/PresentationGate.cs`: conversation presentation (camera lock, letterbox, HUD, response bar) only on the talking player's screen.
+- `Game/PauseScope.cs`: local pause, Ammonomicon and map; the world keeps running.
+- `Game/SecondFightLock.cs`: one room in combat at a time.
+- `Game/BreachDoorGate.cs`: the host starts the run from the Breach once everyone has picked a character.
+- `Game/RemoteAim.cs`: per-player aim assist.
+- `Game/AwayGuard.cs`, `Session/RunBackup.cs`: a dropped player's run waits; host backups and resume.
+- `Replication/VitalsSync.cs`: hits and pit falls decided by the owner, health, deaths, revives.
+- `Replication/PropSync.cs`: breakables, tables, minecarts, the exit elevator.
+- `Replication/StatSync.cs`: progress for the guest's save (credits, kills, unlock flags).
+- `Session/PauseMenuEntry.cs`: Play Online in the pause menu; exit and quick restart made safe online.
 
 ## Test scenarios (one per row, added as the matching milestone lands)
 
 `dialogue-one-player`, `shop-while-partner-fights`, `pause-no-freeze`, `boss-intro-both`, `ghost-roam`,
 `superhot-timescale`, `elevator-both`, `pickup-race`, `revive-chest`, `guest-save-credit`.
+

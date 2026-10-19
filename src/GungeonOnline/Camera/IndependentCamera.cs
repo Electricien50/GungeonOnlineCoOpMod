@@ -13,8 +13,12 @@ namespace GungeonOnline.Camera
     {
         public static void Install(Harmony h)
         {
+            // Classic co-op style: the vanilla pull into your partner's fight, decided on the host (a guest's
+            // character is moved there by the host and follows). Explore and Free for all: no pull.
             h.Patch(AccessTools.Method(typeof(PlayerController), "HandleCoopSpecificTimers"),
-                prefix: new HarmonyMethod(typeof(IndependentCamera), nameof(SkipInSession)));
+                prefix: new HarmonyMethod(typeof(IndependentCamera), nameof(PullPrefix)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.ReuniteWithOtherPlayer)),
+                postfix: new HarmonyMethod(typeof(IndependentCamera), nameof(PulledPostfix)));
             // Vanilla co-op stops a player at the edge of the shared camera. With a camera per machine that
             // would pin the other player to the edge of your screen, so it is off online.
             h.Patch(AccessTools.Method(typeof(PlayerController), "CameraBoundsMovementRestrictor"),
@@ -57,6 +61,18 @@ namespace GungeonOnline.Camera
             Session.NetSession.Active || cc.PointIsVisible(point, buffer);
 
         static bool SkipInSession() => !Session.NetSession.Active;
+
+        static bool PullPrefix() => !Session.NetSession.Active || (Session.NetSession.IsHost && Session.NetConfig.CoopStyle.Value == 0);
+
+        public static int Pulls;
+
+        /// <summary>Count and log every Classic pull (host side), for the tests and for reports.</summary>
+        static void PulledPostfix(PlayerController __instance, PlayerController other)
+        {
+            if (!Session.NetSession.Active) return;
+            Pulls++;
+            Plugin.Log.LogInfo($"PULL {(Game.PlayerSlots.IsRemote(__instance) ? "guest" : "host")} into {(other != null && other.CurrentRoom != null ? other.CurrentRoom.GetRoomName() : "?")} ghost={__instance.IsGhost}");
+        }
 
         /// <summary>Mark every remote player as ignored by this machine's camera.</summary>
         public static void Apply()

@@ -29,6 +29,7 @@ namespace GungeonOnline.Net
         public readonly EndPoint Remote;
         public readonly int Slot;
         public object Tag;
+        public string PlayerId = "";
 
         // Stats
         public float RttMs { get; private set; } = 100f;
@@ -302,6 +303,7 @@ namespace GungeonOnline.Net
         Data = 4,
         Disconnect = 5,
         Punch = 6,
+        KeepAlive = 7, // "still here": sent from a background thread while the game thread is busy loading
     }
 
     public static class Packet

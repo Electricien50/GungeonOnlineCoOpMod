@@ -41,7 +41,12 @@ namespace GungeonOnline.Replication
         {
             NetSession.Instance.On(Channel.Snapshot, OnSnapshot);
             NetSession.Instance.SessionEnded += () => { tracks.Clear(); lastSnapshotFrame = 0; hostFrame = 0; };
+            // After a reconnect the other side may have restarted its counters; start reconciliation fresh.
+            NetSession.Instance.PeerJoined += c => { tracks.Clear(); lastSnapshotFrame = 0; };
         }
+
+        /// <summary>Floor change: positions jump (everyone starts at the new entrance), so start reconciliation fresh.</summary>
+        public void ResetTracks() { tracks.Clear(); }
 
         Track T(int slot)
         {
@@ -153,7 +158,7 @@ namespace GungeonOnline.Replication
                     t.History.Clear();
                     t.LastReconciledSeq = seq;
                     p.transform.position = new Vector3(hostPos.x, hostPos.y, p.transform.position.z);
-                    p.specRigidbody.Reinitialize();
+                    try { p.specRigidbody.Reinitialize(); } catch { } // player still being set up after a load
                     Plugin.Log.LogInfo($"SYNC slot={slot} hard snap {off.magnitude:F1} (no history for {seq})");
                 }
                 return;

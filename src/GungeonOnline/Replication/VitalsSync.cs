@@ -19,7 +19,7 @@ namespace GungeonOnline.Replication
     internal sealed class VitalsSync : MonoBehaviour
     {
         public static VitalsSync Instance { get; private set; }
-        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43;
+        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43, EvPitfall = 44;
 
         static bool scope;
         static bool IsClient => NetSession.Active && !NetSession.IsHost;
@@ -36,6 +36,9 @@ namespace GungeonOnline.Replication
         {
             h.Patch(AccessTools.Method(typeof(PlayerController), "Die"), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(DiedPostfix)));
             h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.ResurrectFromChest)), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(RevivedPostfix)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), "Fall"),
+                prefix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPrefix)),
+                postfix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPostfix)));
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.ApplyDamage)),
                 prefix: new HarmonyMethod(typeof(VitalsSync), nameof(DamagePrefix)),
                 postfix: new HarmonyMethod(typeof(VitalsSync), nameof(DamagePostfix)));
@@ -46,6 +49,12 @@ namespace GungeonOnline.Replication
         void Start()
         {
             NetSession.Instance.SessionEnded += () => { hurtSeq = 0; hurtApplied.Clear(); lastVitals.Clear(); };
+            // Hit report numbering restarts with every connection.
+            NetSession.Instance.PeerJoined += c =>
+            {
+                if (NetSession.IsHost) { hurtApplied.Remove(c.Slot); lastVitals.Clear(); }
+                else hurtSeq = 0;
+            };
         }
 
         public void ForceResend() => lastVitals.Clear();
@@ -75,6 +84,52 @@ namespace GungeonOnline.Replication
         }
 
         /// <summary>Host: a player died here (ghost or game over follows); every machine runs the same death on its copy.</summary>
+        // ---------- Pit falls: the owner of a player decides, like hits ----------
+
+        static bool fallScope;
+
+        /// <summary>Another machine's player only falls when its owner says it fell, so nobody sees a fall that did not happen.</summary>
+        static bool FallPrefix(PlayerController __instance, out bool __state)
+        {
+            __state = __instance != null && __instance.IsFalling;
+            if (!NetSession.Active || fallScope || __instance == null) return true;
+            return !PlayerSlots.IsRemote(__instance);
+        }
+
+        /// <summary>Your own player just started falling: tell everyone (the host forwards it to the others).</summary>
+        static void FallPostfix(PlayerController __instance, bool __state)
+        {
+            if (!NetSession.Active || fallScope || Instance == null || __instance == null || __state || !__instance.IsFalling) return;
+            if (__instance != PlayerSlots.Local) return;
+            Instance.SendPitfall(NetSession.LocalSlot, __instance.transform.position, null);
+        }
+
+        void SendPitfall(int slot, Vector2 at, Connection except)
+        {
+            w.Reset(); w.U8(EvPitfall); w.U8((byte)slot); w.F32(at.x); w.F32(at.y);
+            var msg = w.ToArray();
+            var ws = WorldSync.Instance;
+            foreach (var c in NetSession.Instance.Node.Connections)
+                // The host only sends to players whose floor is ready; a guest always tells the host.
+                if (c != except && (!NetSession.IsHost || (ws != null && ws.IsReady(c)))) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
+        }
+
+        void ApplyPitfall(Connection from, ref WireReader r)
+        {
+            int slot = r.U8();
+            var at = new Vector2(r.F32(), r.F32());
+            if (NetSession.IsHost) slot = from.Slot; // a client only speaks for its own player
+            var p = PlayerSlots.ForSlot(slot);
+            if (!p || !PlayerSlots.IsRemote(p) || p.IsFalling || p.IsGhost) return;
+            fallScope = true;
+            try { p.WarpToPoint(at); p.ForceFall(); }
+            finally { fallScope = false; }
+            PitfallsApplied++;
+            if (NetSession.IsHost) SendPitfall(slot, at, from);
+        }
+
+        public int PitfallsApplied;
+
         static void DiedPostfix(PlayerController __instance)
         {
             if (!IsHostSession || scope || Instance == null) return;
@@ -105,6 +160,7 @@ namespace GungeonOnline.Replication
         /// <summary>Events 40-49, called by WorldSync's event router on both sides.</summary>
         public void Apply(Connection c, byte type, ref WireReader r)
         {
+            if (type == EvPitfall) { ApplyPitfall(c, ref r); return; }
             if (type == EvHurt && NetSession.IsHost)
             {
                 var self = PlayerSlots.ForSlot(c.Slot);

@@ -41,6 +41,9 @@ namespace GungeonOnline.Replication
         }
 
         void Awake() { Instance = this; }
+
+        /// <summary>New floor: forget every bullet (copies that died locally never get a destroy event).</summary>
+        public void OnFloorChanged() { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); }
         void Start() { NetSession.Instance.SessionEnded += () => { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); }; }
 
         /// <summary>Bullets the host owns: not from a player, able to hit players.</summary>

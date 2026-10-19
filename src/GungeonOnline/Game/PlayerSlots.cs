@@ -80,10 +80,11 @@ namespace GungeonOnline.Game
         {
             yield return null;
             if (!p) yield break;
-            GameUIRoot.Instance.ConvertCoreUIToCoopMode();
-            PhysicsEngine.Instance.RegisterOverlappingGhostCollisionExceptions(p.specRigidbody);
-            GameManager.Instance.MainCameraController.ClearPlayerCache();
-            if (Game.SceneObjects.InBreach) Game.SceneObjects.Breach.ProcessPlayerEnteredFoyer(p);
+            // A scene change can land between the spawn and this frame; skip whatever is gone.
+            if (GameUIRoot.Instance) GameUIRoot.Instance.ConvertCoreUIToCoopMode();
+            if (PhysicsEngine.Instance && p.specRigidbody) PhysicsEngine.Instance.RegisterOverlappingGhostCollisionExceptions(p.specRigidbody);
+            if (GameManager.Instance.MainCameraController) GameManager.Instance.MainCameraController.ClearPlayerCache();
+            if (Game.SceneObjects.InBreach && Game.SceneObjects.Breach) Game.SceneObjects.Breach.ProcessPlayerEnteredFoyer(p);
             // Vanilla co-op restores input when the join conversation ends; there is no conversation here.
             p.CurrentInputState = PlayerInputState.AllInput;
             RefreshFoyerForCoopChange();

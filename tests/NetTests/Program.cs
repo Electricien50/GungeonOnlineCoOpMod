@@ -90,7 +90,7 @@ static class Program
         client.Rejected += r => reason = r;
         client.Connect(new IPEndPoint(IPAddress.Loopback, Port(host.Socket)), Now());
         Run(() => reason != null, 5, host, client);
-        Check(reason != null && reason.Contains("mod version"), "mod version mismatch rejected: " + reason);
+        Check(reason != null && reason.Contains("versions"), "mod version mismatch rejected: " + reason);
         client.Dispose(); host.Dispose();
     }
 
@@ -107,7 +107,7 @@ static class Program
         Run(() => aOk, 5, host, a);
         b.Connect(ep, Now());
         Run(() => bReason != null, 5, host, a, b);
-        Check(aOk && bReason == "session is full", "third player rejected when MaxPlayers=2: " + bReason);
+        Check(aOk && bReason == "The game is full.", "third player rejected when MaxPlayers=2: " + bReason);
         a.Dispose(); b.Dispose(); host.Dispose();
     }
 

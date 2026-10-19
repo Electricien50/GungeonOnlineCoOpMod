@@ -1,4 +1,4 @@
-GUNGEON ONLINE - how to play
+ENTER THE GUNGEON ONLINE CO-OP MOD - how to play
 
 1. Both players: double-click "Install Gungeon Online.bat". It finds your game (Steam, GOG or Epic) by itself.
 2. Start Enter the Gungeon. Pause and pick "Play Online" (or hold Back + Start, or press F8).
