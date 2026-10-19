@@ -125,7 +125,7 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 
 ## Donate
 
-My mods will always be free but donations are welcome! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
+My mods will always be free but donations are welcome on kofi! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
 
 ## Features
 

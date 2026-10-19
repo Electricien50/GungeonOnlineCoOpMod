@@ -77,6 +77,6 @@ Enter The Gungeon Online Co-Op Mod is original work. It contains no code from Gu
 
 Enter the Gungeon is made by Dodge Roll and published by Devolver Digital. Enter The Gungeon Online Co-Op Mod is an unofficial fan project, not affiliated with or endorsed by them. If you don't have the game yet, go buy it.
 
-My mods will always be free but donations are welcome! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
+My mods will always be free but donations are welcome on kofi! [ko-fi.com/hero88go](https://ko-fi.com/hero88go)
 
 *Hero88go*
