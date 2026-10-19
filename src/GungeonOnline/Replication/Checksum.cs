@@ -161,11 +161,16 @@ namespace GungeonOnline.Replication
                 var p = PlayerSlots.ForSlot(slot);
                 if (!p) { problems.Add($"player {slot} missing"); continue; }
                 string myKey = PlayerKey(p);
-                if (myKey != key) problems.Add($"player {slot} state host=[{key}] mine=[{myKey}]");
+                bool ownHitsPending = slot == NetSession.LocalSlot && VitalsSync.Instance != null && VitalsSync.Instance.HurtsInFlight;
+                if (myKey != key && !ownHitsPending) problems.Add($"player {slot} state host=[{key}] mine=[{myKey}]");
                 // Positions are a frame or two apart by nature; only gross divergence counts.
                 float d = (hostPos - (Vector2)p.transform.position).magnitude;
                 // Ghosts fly fast and pass through walls; their position is not part of the game state that matters.
-                if (d > 4f && !p.IsGhost) problems.Add($"player {slot} position off by {d:F1}");
+                // Tolerance grows with ping (a fast dodge covers more ground before the summary arrives).
+                float rtt = 0f;
+                foreach (var cn in NetSession.Instance.Node.Connections) rtt = Mathf.Max(rtt, cn.RttMs);
+                float tol = 4f + 10f * rtt / 1000f;
+                if (d > tol && !p.IsGhost && !p.currentMineCart) problems.Add($"player {slot} position off by {d:F1}");
             }
             if (problems.Count == 0) { ConsecutiveClean++; pendingProblems = 0; return; }
             // A single check can catch a change that is still in flight; act on two in a row.

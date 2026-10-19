@@ -56,6 +56,9 @@ namespace GungeonOnline.Net
 
         // Reliable receive
         ushort nextExpected;
+        ushort lastRelAck;
+        double relAckSince;
+        public int StallResends;
         readonly Dictionary<ushort, KeyValuePair<byte, byte[]>> outOfOrder = new Dictionary<ushort, KeyValuePair<byte, byte[]>>();
         readonly List<byte> fragAssembly = new List<byte>();
         byte fragChannel;
@@ -101,6 +104,7 @@ namespace GungeonOnline.Net
         }
 
         public int PendingReliable => pending.Count;
+        public string RelStats => $"pending={pending.Count} next={nextExpected} held={outOfOrder.Count} stall={StallResends}";
 
         /// <summary>
         /// Build the datagrams to send now. Always emits at least one packet when <paramref name="forceAck"/>
@@ -215,6 +219,16 @@ namespace GungeonOnline.Net
                 pendingById.Remove(pending.First.Value.Id);
                 pending.RemoveFirst();
             }
+            // Stall guard: the peer's count has not moved for 1.5 s while the oldest message is marked as received.
+            // It was lost after arriving; send it again.
+            if (relAck != lastRelAck) { lastRelAck = relAck; relAckSince = now; }
+            else if (pending.First != null && pending.First.Value.Acked && now - relAckSince > 1.5)
+            {
+                pending.First.Value.Acked = false;
+                pending.First.Value.LastSent = -1;
+                relAckSince = now;
+                StallResends++;
+            }
 
             while (r.Remaining > 0)
             {
@@ -270,12 +284,10 @@ namespace GungeonOnline.Net
             float sample = (float)age;
             RttVarMs = 0.75f * RttVarMs + 0.25f * Math.Abs(sample - RttMs);
             RttMs = 0.875f * RttMs + 0.125f * sample;
+            // The packet arrived, but keep its reliable messages until the peer's running "delivered up to" count
+            // passes them: if the peer could not use part of a packet, the message is still here to send again.
             foreach (var id in packetMessages[slot])
-                if (pendingById.TryGetValue(id, out var node))
-                {
-                    pending.Remove(node);
-                    pendingById.Remove(id);
-                }
+                if (pendingById.TryGetValue(id, out var node)) node.Value.Acked = true;
             packetMessages[slot] = null;
         }
 

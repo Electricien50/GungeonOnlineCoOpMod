@@ -1,0 +1,64 @@
+using GungeonOnline.Session;
+using HarmonyLib;
+using UnityEngine;
+
+namespace GungeonOnline.Game
+{
+    /// <summary>
+    /// Safety net against a player left without control. Some rare chains (a pit fall interrupted by a floor change,
+    /// for example) can leave the game's own input state at "no input" with nothing left to restore it. If your own
+    /// character has had no control for 8 seconds while nothing legitimately holds it (no input lock of any kind,
+    /// not falling, not in a cart, not a ghost, no boss kill cam, no loading, no pause, no menu), control is given back.
+    /// </summary>
+    internal sealed class InputWatchdog : MonoBehaviour
+    {
+        float since = -1f, fallSince = -1f;
+        bool fallRescued;
+        public static int Restores;
+
+        static readonly System.Reflection.FieldInfo InputStateField = AccessTools.Field(typeof(PlayerController), "m_inputState");
+        static readonly System.Reflection.FieldInfo DisableField = AccessTools.Field(typeof(PlayerController), "m_disableInput");
+        float nextCheck;
+
+        void Update()
+        {
+            // Four checks a second is plenty for an 8 s timeout, and keeps the cost near zero.
+            if (Time.realtimeSinceStartup < nextCheck) return;
+            nextCheck = Time.realtimeSinceStartup + 0.25f;
+            if (!NetSession.Active || !GameManager.HasInstance) { since = -1f; return; }
+            var gm = GameManager.Instance;
+            var p = PlayerSlots.Local;
+            if (p == null || gm.IsLoadingLevel || gm.IsPaused || OnlineMenu.IsOpen || SceneObjects.InBreach) { since = -1f; return; }
+            // A fall that never finishes (its coroutine was cut short) gets the game's own pit respawn after 10 s.
+            if (p.IsFalling && !p.healthHaver.IsDead)
+            {
+                if (fallSince < 0) fallSince = Time.realtimeSinceStartup;
+                else if (!fallRescued && Time.realtimeSinceStartup - fallSince > 10f)
+                {
+                    fallRescued = true;
+                    try
+                    {
+                        var cr = (System.Collections.IEnumerator)AccessTools.Method(typeof(PlayerController), "PitRespawn").Invoke(p, new object[] { Vector2.zero });
+                        p.StartCoroutine(cr);
+                        Restores++;
+                        Plugin.Log.LogWarning("InputWatchdog: a fall never finished, respawned at the edge");
+                    }
+                    catch (System.Exception e) { Plugin.Log.LogWarning("InputWatchdog: pit respawn failed: " + e.Message); }
+                }
+            }
+            else { fallSince = -1f; fallRescued = false; }
+            var raw = (PlayerInputState)InputStateField.GetValue(p);
+            var dis = DisableField.GetValue(p) as OverridableBool;
+            bool locked = dis != null && dis.Value;
+            bool held = locked || p.IsFalling || p.currentMineCart || p.IsGhost || p.healthHaver.IsDead
+                        || BossKillCam.BossDeathCamRunning || gm.PreventPausing || p.IsInMinecart;
+            if (raw == PlayerInputState.AllInput || held) { since = -1f; return; }
+            if (since < 0) { since = Time.realtimeSinceStartup; return; }
+            if (Time.realtimeSinceStartup - since < 8f) return;
+            p.CurrentInputState = PlayerInputState.AllInput;
+            Restores++;
+            since = -1f;
+            Plugin.Log.LogWarning($"InputWatchdog: gave control back (state was {raw} for 8 s with nothing holding it)");
+        }
+    }
+}

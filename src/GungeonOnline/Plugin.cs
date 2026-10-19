@@ -48,6 +48,7 @@ namespace GungeonOnline
             gameObject.AddComponent<Session.Toasts>();
             gameObject.AddComponent<Session.Metrics>();
             gameObject.AddComponent<Game.PartnerUI>();
+            gameObject.AddComponent<Game.InputWatchdog>();
             gameObject.AddComponent<Session.OnlineMenu>();
             gameObject.AddComponent<Session.RunBackup>();
             gameObject.AddComponent<Game.AwayGuard>();

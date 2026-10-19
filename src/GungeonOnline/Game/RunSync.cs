@@ -196,6 +196,9 @@ namespace GungeonOnline.Game
         /// Host: anyone connected but not ready on this floor (joined while we were loading, came back after a
         /// crash, missed the load message) is sent the rejoin again until they are on the floor with us.
         /// </summary>
+        Dungeon stragglerFloor;
+        float stragglerFloorAt;
+
         void BringStragglers()
         {
             if (!NetSession.Active || !NetSession.IsHost || CurrentIndex < 0 || SceneObjects.InBreach) return;
@@ -203,10 +206,13 @@ namespace GungeonOnline.Game
             var ws = Replication.WorldSync.Instance;
             if (ws == null) return;
             float now = Time.realtimeSinceStartup;
+            // A friend on a slow PC can take a while to load the same floor: give them 40 s before re-sending it.
+            if (GameManager.Instance.Dungeon != stragglerFloor) { stragglerFloor = GameManager.Instance.Dungeon; stragglerFloorAt = now; }
+            if (now - stragglerFloorAt < 40f) return;
             foreach (var c in NetSession.Instance.Node.Connections)
             {
                 if (ws.IsReady(c)) continue;
-                if (lastRejoin.TryGetValue(c, out var t) && now - t < 15f) continue;
+                if (lastRejoin.TryGetValue(c, out var t) && now - t < 40f) continue;
                 lastRejoin[c] = now;
                 SendRejoin(c);
             }

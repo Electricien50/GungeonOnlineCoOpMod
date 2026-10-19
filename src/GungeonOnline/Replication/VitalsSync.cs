@@ -57,7 +57,9 @@ namespace GungeonOnline.Replication
             };
         }
 
-        public void ForceResend() => lastVitals.Clear();
+        public void ForceResend() { lastVitals.Clear(); lastSig.Clear(); }
+        readonly Dictionary<int, float> lastSig = new Dictionary<int, float>();
+        readonly List<KeyValuePair<int, PlayerController>> vitalsList = new List<KeyValuePair<int, PlayerController>>();
 
         /// <summary>A copy of another machine's player never takes damage from local hit checks.</summary>
         static bool DamagePrefix(HealthHaver __instance)
@@ -129,6 +131,9 @@ namespace GungeonOnline.Replication
         }
 
         public int PitfallsApplied;
+        uint LastAck;
+        /// <summary>Guest: hits on our own player the host has not confirmed yet.</summary>
+        public bool HurtsInFlight => hurtSeq > LastAck;
 
         static void DiedPostfix(PlayerController __instance)
         {
@@ -221,6 +226,7 @@ namespace GungeonOnline.Replication
                     var p = PlayerSlots.ForSlot(slot);
                     if (!p || p.healthHaver == null) continue;
                     bool own = slot == NetSession.LocalSlot;
+                    if (own) LastAck = ack;
                     if (own && ack < hurtSeq) continue; // the host has not seen all our hits yet
                     scope = true;
                     try
@@ -252,12 +258,20 @@ namespace GungeonOnline.Replication
         void LateUpdateImpl()
         {
             if (!IsHostSession || GameManager.Instance.IsLoadingLevel) return;
-            var list = new List<KeyValuePair<int, PlayerController>>();
+            var list = vitalsList;
+            list.Clear();
             if (PlayerSlots.Local) list.Add(new KeyValuePair<int, PlayerController>(NetSession.LocalSlot, PlayerSlots.Local));
             foreach (var kv in PlayerSlots.Remotes) if (kv.Value) list.Add(kv);
             bool changed = false;
             foreach (var kv in list)
             {
+                // Cheap change test (numbers, no strings); the text key is only built when something moved.
+                var hh = kv.Value.healthHaver;
+                var cc = kv.Value.carriedConsumables;
+                float sig = hh.GetCurrentHealth() * 7f + hh.GetMaxHealth() * 131f + hh.Armor * 1031f + kv.Value.Blanks * 9973f
+                            + (cc != null ? cc.Currency * 3.7f + cc.KeyBullets * 101.3f : 0f);
+                if (lastSig.TryGetValue(kv.Key, out var ps) && ps == sig && lastVitals.ContainsKey(kv.Key)) continue;
+                lastSig[kv.Key] = sig;
                 string key = Key(kv.Key, kv.Value);
                 if (!lastVitals.TryGetValue(kv.Key, out var prev) || prev != key) { lastVitals[kv.Key] = key; changed = true; }
             }

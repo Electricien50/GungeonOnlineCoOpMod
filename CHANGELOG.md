@@ -29,5 +29,18 @@
 - Hegemony credits, kills and unlocks earned in the run go into both players' saves.
 - One fight at a time (optional), local pause, NPC conversations only take over the talking player's screen.
 
+**Fixes**
+- A character pick sent before the connection was fully up could get lost and leave both players in the Breach: the pick is now re-sent until the host has it.
+- Reliable messages can no longer stall: a message that arrived but could not be used is sent again.
+- Minecarts: the cart you drive is yours on every machine (no more drift while riding).
+- Sync checks no longer raise false alarms at very high ping or right after a drop.
+- A friend on a slow PC gets more time to load a floor before being sent it again.
+- Safety net: if your character is ever left without control or stuck mid-fall for no reason, control comes back on its own.
+- Locator only shows once your friend is fully off screen (no overlap with the name tag).
+- Lower cost per frame (health and money sync no longer rebuilds text every frame).
+
+**Known issue**
+- In some fights the guest does not see a few of the enemies' bullets. Those bullets can't hit the guest (hits are decided on the guest's own screen), and everything else stays in sync. Being worked on.
+
 **Tools**
 - *Save report* writes a report to your Desktop. `metrics.jsonl` records connection numbers every 5 seconds.

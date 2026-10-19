@@ -519,7 +519,7 @@ namespace GungeonOnline.Dev
             catch (System.Exception e)
             {
                 // Early boot frames: the game is not up yet. Log once, keep going.
-                if (!updateErrorLogged) { updateErrorLogged = true; Plugin.Log.LogInfo("Harness: status not ready yet (" + e.GetType().Name + ")"); }
+                if (!updateErrorLogged) { updateErrorLogged = true; Plugin.Log.LogInfo("Harness: status not ready yet (" + e.GetType().Name.Replace("Exception", "") + ")"); }
             }
         }
 
@@ -541,7 +541,7 @@ namespace GungeonOnline.Dev
                 if (Session.NetSession.Active)
                 {
                     net = $"{(Session.NetSession.IsHost ? "host" : "client")} slot={Session.NetSession.LocalSlot} peers={s.Node.Connections.Count}";
-                    foreach (var c in s.Node.Connections) net += $" [P{c.Slot + 1} rtt={c.RttMs:F1} loss={c.LossPercent:F1} sent={c.PacketsSent} recv={c.PacketsReceived}]";
+                    foreach (var c in s.Node.Connections) net += $" [P{c.Slot + 1} rtt={c.RttMs:F1} loss={c.LossPercent:F1} sent={c.PacketsSent} recv={c.PacketsReceived} {c.RelStats}]";
                     if (s.InviteCodeText != null) net += " code=" + s.InviteCodeText;
                     foreach (var kv in Game.PlayerSlots.Remotes)
                     {
@@ -576,7 +576,7 @@ namespace GungeonOnline.Dev
                     var inv = Replication.InventorySync.Instance;
                     if (inv != null) net += $" inv[sent={inv.Sent} applied={inv.Applied} added={inv.Added} removed={inv.Removed}]";
                     var vs = Replication.VitalsSync.Instance;
-                    if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied} pits={vs.PitfallsApplied} cartRides={ScenarioRunner.CartRides} elevators={(Replication.PropSync.Instance != null ? Replication.PropSync.Instance.Elevators : 0)} stats={Replication.StatSync.Sent}/{Replication.StatSync.Applied} credits={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.META_CURRENCY) : -1)} kills={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.ENEMIES_KILLED) : -1)}]";
+                    if (vs != null) net += $" vitals[hurtSent={vs.HurtsSent} hurtApplied={vs.HurtsApplied} sent={vs.VitalsSent} applied={vs.VitalsApplied} pits={vs.PitfallsApplied} cartRides={ScenarioRunner.CartRides} elevators={(Replication.PropSync.Instance != null ? Replication.PropSync.Instance.Elevators : 0)} watchdog={Game.InputWatchdog.Restores} stats={Replication.StatSync.Sent}/{Replication.StatSync.Applied} credits={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.META_CURRENCY) : -1)} kills={(GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.ENEMIES_KILLED) : -1)}]";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" hpR{kv.Key}={kv.Value.healthHaver.GetCurrentHealth()}";
                     if (gm.PrimaryPlayer != null) net += $" money={gm.PrimaryPlayer.carriedConsumables.Currency} guns={gm.PrimaryPlayer.inventory.AllGuns.Count} passives={gm.PrimaryPlayer.passiveItems.Count}";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" R{kv.Key}guns={kv.Value.inventory.AllGuns.Count} R{kv.Key}passives={kv.Value.passiveItems.Count}";

@@ -25,6 +25,7 @@ namespace GungeonOnline.Session
         public static int HostCoopStyle = -1;
         int sentStyle = -1;
         float nextAimCheck;
+        float nextChoiceCheck;
         string sentChoice;
         PlayerController lastLocal;
 
@@ -70,6 +71,14 @@ namespace GungeonOnline.Session
             if (local != null && Game.SceneObjects.InBreach)
             {
                 string mine = PrefabOf(local);
+                // Guest: if the host's player list still doesn't show our pick (it was sent before the connection was
+                // up, or lost), send it again every two seconds until it does.
+                if (!NetSession.IsHost && NetSession.Instance.Node != null && NetSession.Instance.Node.Connections.Count > 0
+                    && Time.realtimeSinceStartup >= nextChoiceCheck)
+                {
+                    nextChoiceCheck = Time.realtimeSinceStartup + 2f;
+                    if (!Roster.TryGetValue(NetSession.LocalSlot, out var me) || me.Prefab != mine) sentChoice = null;
+                }
                 if (mine != sentChoice)
                 {
                     sentChoice = mine;
@@ -82,6 +91,7 @@ namespace GungeonOnline.Session
                     {
                         var w = new WireWriter(64);
                         w.U8(MsgChoice); w.Str(mine); w.Str(NetConfig.PlayerName.Value);
+                        Plugin.Log.LogInfo($"Lobby: sending my character {mine} to {NetSession.Instance.Node.Connections.Count} peer(s)");
                         NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
                     }
                 }

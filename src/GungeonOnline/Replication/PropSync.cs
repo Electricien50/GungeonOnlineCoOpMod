@@ -17,7 +17,7 @@ namespace GungeonOnline.Replication
     internal sealed class PropSync : MonoBehaviour
     {
         public static PropSync Instance { get; private set; }
-        const byte EvMinor = 80, EvMajor = 81, EvFlip = 82, EvCarts = 83, EvElevator = 84;
+        const byte EvMinor = 80, EvMajor = 81, EvFlip = 82, EvCarts = 83, EvElevator = 84, EvMyCart = 85;
 
         static bool scope;
         static bool IsClient => NetSession.Active && !NetSession.IsHost;
@@ -61,6 +61,7 @@ namespace GungeonOnline.Replication
         {
             NetSession.Instance.On(Channel.Props, (c, data, d) =>
             {
+                if (data.Length > 0 && data[0] == EvMyCart && NetSession.IsHost) { var mr = new WireReader(data, 1, data.Length - 1); ApplyGuestCart(c, ref mr); return; }
                 if (data.Length == 0 || data[0] != EvCarts || WorldSync.Instance == null || !WorldSync.Instance.FloorReady) return;
                 var r = new WireReader(data, 1, data.Length - 1);
                 ApplyCarts(ref r);
@@ -127,8 +128,41 @@ namespace GungeonOnline.Replication
             return carts;
         }
 
+        float nextMyCart;
+        public static readonly Dictionary<int, float> GuestCartUntil = new Dictionary<int, float>();
+
+        /// <summary>Guest: while riding, tell the host where our cart is (30 times a second).</summary>
+        void SendMyCart()
+        {
+            var me = PlayerSlots.Local;
+            if (!IsClient || me == null || !me.currentMineCart || Time.realtimeSinceStartup < nextMyCart) return;
+            // Only the driver steers: when both ride one cart, the host's driver decides where it goes.
+            if (me.currentMineCart.CurrentInhabitant != me) return;
+            nextMyCart = Time.realtimeSinceStartup + 1f / 30f;
+            int idx = Carts().IndexOf(me.currentMineCart);
+            if (idx < 0) return;
+            Vector2 p = me.currentMineCart.transform.position;
+            w.Reset(); w.U8(EvMyCart); w.U8((byte)idx); w.F32(p.x); w.F32(p.y);
+            foreach (var c in NetSession.Instance.Node.Connections) c.Send((byte)Channel.Props, w.ToArray(), Delivery.Unreliable);
+        }
+
+        /// <summary>Host: the guest's cart goes where the guest's game says; the guest's character rides along.</summary>
+        void ApplyGuestCart(Connection from, ref WireReader r)
+        {
+            if (!SceneObjects.OnDungeonFloor) return;
+            int idx = r.U8();
+            var p = new Vector2(r.F32(), r.F32());
+            var list = Carts();
+            if (idx >= list.Count || !list[idx]) return;
+            var cart = list[idx];
+            cart.transform.position = new Vector3(p.x, p.y, cart.transform.position.z);
+            if (cart.specRigidbody) cart.specRigidbody.Reinitialize();
+            GuestCartUntil[from.Slot] = Time.realtimeSinceStartup + 0.5f;
+        }
+
         void LateUpdate()
         {
+            SendMyCart();
             if (!IsHostSession || !SceneObjects.OnDungeonFloor || Time.realtimeSinceStartup < nextCarts) return;
             nextCarts = Time.realtimeSinceStartup + 1f / 30f;
             var list = Carts();
