@@ -59,23 +59,23 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
   </tr>
   <tr>
     <td align="center"><sub>Play Online sits in the game's own pause menu.</sub></td>
-    <td align="center"><sub>Host and your invite code is copied for you.</sub></td>
+    <td align="center"><sub>Host, and your invite code is copied for you.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/media/front-friend-offscreen.png" alt="Friend off screen"></td>
-    <td><img src="docs/media/locator.png" alt="Friend locator, pickup tag"></td>
+    <td><img src="docs/media/host-view.png" alt="The host's screen"></td>
+    <td><img src="docs/media/friend-view.png" alt="The friend's screen"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Split up and your camera stays yours.</sub></td>
-    <td align="center"><sub>The default locator: your friend's head and distance at the screen edge.</sub></td>
+    <td align="center"><sub>The host's screen...</sub></td>
+    <td align="center"><sub>...and the friend's, at the same moment. Each camera follows its own player.</sub></td>
   </tr>
   <tr>
+    <td><img src="docs/media/locator.png" alt="Friend off screen, with the locator at the edge"></td>
     <td><img src="docs/media/boss.png" alt="Boss fight"></td>
-    <td><img src="docs/media/locator-bubble.png" alt="Friend locator"></td>
   </tr>
   <tr>
+    <td align="center"><sub>Split up: a small tag at the screen edge points to your friend.</sub></td>
     <td align="center"><sub>Boss fights, bullets and all, on both screens.</sub></td>
-    <td align="center"><sub>Friend off screen? A small tag at the edge points the way.</sub></td>
   </tr>
 </table>
 
