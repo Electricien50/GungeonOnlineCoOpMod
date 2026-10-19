@@ -1,0 +1,11 @@
+GUNGEON ONLINE - how to play
+
+1. Both players: double-click "Install Gungeon Online.bat". It finds your game (Steam, GOG or Epic) by itself.
+2. Start Enter the Gungeon. Pause and pick "Play Online" (or hold Back + Start, or press F8).
+3. One player picks Host. The invite code is copied for you: send it to your friend.
+   On Steam you can also pick "Invite Steam friend".
+4. The other player copies the code, then picks Join. The code is read from the clipboard.
+5. Each player picks a character in the Breach, then the host walks into the Gungeon.
+
+If the connection drops, the run waits for you and you reconnect by yourself. Nothing is lost.
+If something looks wrong, open the menu and pick "Save report": a file appears on your Desktop.
