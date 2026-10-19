@@ -27,7 +27,15 @@ namespace GungeonOnline.Input
         {
             var m = AccessTools.Method(typeof(InputManager), "UpdateInternal");
             h.Patch(m, prefix: new HarmonyMethod(typeof(InputPump), nameof(Prefix)), postfix: new HarmonyMethod(typeof(InputPump), nameof(Postfix)));
+            // The options menu rebuilds its controller list when any device attaches; a virtual pad is not one of yours.
+            foreach (var name in new[] { "InputManager_OnDeviceAttached", "InputManager_OnDeviceDetached" })
+            {
+                var om = AccessTools.Method(typeof(BraveOptionsMenuItem), name);
+                if (om != null) h.Patch(om, prefix: new HarmonyMethod(typeof(InputPump), nameof(SkipVirtual)));
+            }
         }
+
+        static bool SkipVirtual(InputDevice obj) => !(obj is NetInputDevice);
 
         static void Prefix()
         {

@@ -9,3 +9,5 @@ run/
 tests/NetTests/bin/
 tests/NetTests/obj/
 dist/
+.game-c/
+.game-d/
