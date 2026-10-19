@@ -10,7 +10,7 @@ author: Hero88go
 
 I wanted to play Enter the Gungeon with a friend who lives across the country. The game's co-op is couch co-op: one screen, one shared camera, and player two is stuck as the Cultist. Remote Play works, but one player is watching a video stream of the other's game, with all the input lag that comes with it.
 
-So I built **Enter The Gungeon Online Co-Op Mod**, a mod that turns Gungeon's co-op into real online co-op. Today it's out as a public beta, free and open source.
+So I built **Enter The Gungeon Online Co-Op Mod**, a mod that turns Gungeon's co-op into real online co-op. Today version 1.0 is out, free and open source.
 
 ## Your own screen, your own camera
 

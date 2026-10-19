@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.9.0_beta-e2412c">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0-e2412c">
   <img alt="Players" src="https://img.shields.io/badge/players-2_online-f2a33a">
   <img alt="Stores" src="https://img.shields.io/badge/Steam_%7C_GOG_%7C_Epic-cross--play-4c8bf5">
   <img alt="Loader" src="https://img.shields.io/badge/BepInEx-5.4-6e40c9">
@@ -158,7 +158,7 @@ Enter The Gungeon Online Co-Op Mod is original work. **It contains no code from 
 
 ## Status
 
-Beta. Every automated check in [VALIDATION.md](VALIDATION.md) passes. Those checks run two hidden game instances on one PC, with a simulated 70 ms connection, 240 fps and 200 fps, through fights, bosses, shops, deaths, floor changes, dropped connections, crashes and 30 minute sessions. What automation can't cover yet is real routers, Steam invites and human hands on controllers: that's what the first public sessions are for. Please send a *Save report* if something looks wrong.
+Version 1.0. Every automated check in [VALIDATION.md](VALIDATION.md) passes. Those checks run two hidden game instances on one PC, with a simulated 70 ms connection, 240 fps and 200 fps, through fights, bosses, shops, deaths, floor changes, dropped connections, crashes and 30 minute sessions. What automation can't cover yet is real routers, Steam invites and human hands on controllers: that's what the first public sessions are for. Please send a *Save report* if something looks wrong.
 
 ## Settings
 

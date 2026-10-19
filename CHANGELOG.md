@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 beta (first public release)
+## 1.0 (first public release)
 
 **Play**
 - Online co-op for 2 players, each on their own PC with their own controller, camera and HUD.
