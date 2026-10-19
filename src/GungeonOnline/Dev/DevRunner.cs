@@ -134,6 +134,15 @@ namespace GungeonOnline.Dev
             {
                 galleryWarp = 1;
                 Vector2 c = me.CenterPosition;
+                if (System.Environment.GetEnvironmentVariable("GO_GALLERY_FIGHT") == "1")
+                {
+                    // Front-page shot: both players side by side in the middle of a room full of enemies.
+                    foreach (var room in gm.Dungeon.data.rooms)
+                    {
+                        var list = room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear);
+                        if (list != null && list.Count >= 4 && room != gm.Dungeon.data.Entrance) { c = room.GetCenteredVisibleClearSpot(3, 3).ToVector2(); me.WarpToPoint(c); break; }
+                    }
+                }
                 foreach (var p in gm.AllPlayers) if (p) p.healthHaver.IsVulnerable = false;
                 foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) kv.Value.WarpToPoint(c + new Vector2(3.5f, -0.5f));
                 Plugin.Log.LogInfo("Harness: gallery, players side by side");

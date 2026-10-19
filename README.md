@@ -70,7 +70,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
     <td align="center"><sub>...and the friend's, at the same moment. Each camera follows its own player.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/media/locator.png" alt="Friend off screen, with the locator at the edge"></td>
+    <td><img src="docs/media/friend-offscreen-locator.png" alt="Friend off screen, with the locator at the edge"></td>
     <td><img src="docs/media/boss.png" alt="Boss fight"></td>
   </tr>
   <tr>
