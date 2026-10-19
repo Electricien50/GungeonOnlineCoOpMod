@@ -63,7 +63,8 @@ namespace GungeonOnline.Dev
         {
             var f = new InputFrame();
             var me = GameManager.Instance.PrimaryPlayer;
-            if (me == null) return f;
+            // In the Breach, interacting would swap characters at the statues; the bot only plays dungeon floors.
+            if (me == null || Foyer.Instance != null) return f;
             AIActor best = null;
             float bestD = 1e9f;
             foreach (var e in StaticReferenceManager.AllEnemies)
@@ -106,6 +107,14 @@ namespace GungeonOnline.Dev
                 if (pos.GetAbsoluteRoom() != me.CurrentRoom) continue;
                 float d = (pos - me.CenterPosition).sqrMagnitude;
                 if (d < bestD) { bestD = d; target = pos + new Vector2(1f, 0.5f); }
+            }
+            foreach (var si in UnityEngine.Object.FindObjectsOfType<ShopItemController>())
+            {
+                if (!si || !si.item || !si.gameObject.activeInHierarchy) continue;
+                Vector2 pos = si.transform.position;
+                if (pos.GetAbsoluteRoom() != me.CurrentRoom) continue;
+                float d = (pos - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; target = pos + new Vector2(0.5f, 0.5f); }
             }
             if (target == null) return f;
             var delta = target.Value - me.CenterPosition;

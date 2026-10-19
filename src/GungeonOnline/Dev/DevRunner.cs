@@ -49,6 +49,32 @@ namespace GungeonOnline.Dev
             }
         }
 
+        float buyAt = -1f;
+        bool bought;
+
+        /// <summary>Harness client (GO_TEST_BUY=1): buy the nearest shop item once, through the normal request path.</summary>
+        void ClientTestBuy(float t)
+        {
+            if (bought || System.Environment.GetEnvironmentVariable("GO_TEST_BUY") != "1") return;
+            if (!Session.NetSession.Active || Session.NetSession.IsHost) return;
+            var me = GameManager.Instance.PrimaryPlayer;
+            if (me == null || Foyer.Instance != null) return;
+            ShopItemController best = null;
+            float bestD = 36f;
+            foreach (var si in FindObjectsOfType<ShopItemController>())
+            {
+                if (!si || !si.item || si.Acquired) continue;
+                float d = ((Vector2)si.transform.position - me.CenterPosition).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = si; }
+            }
+            if (best == null) return;
+            if (buyAt < 0) { buyAt = t + 5f; return; }
+            if (t < buyAt) return;
+            bought = true;
+            Plugin.Log.LogInfo($"Harness: client buying item {best.item.PickupObjectId} for {best.CurrentPrice}");
+            best.Interact(me);
+        }
+
         float fightAt = -1f;
         bool fightDone;
 
@@ -66,6 +92,29 @@ namespace GungeonOnline.Dev
             if (fightAt < 0) { fightAt = t + 3f; return; }
             if (t < fightAt) return;
             fightDone = true;
+            if (mode == "shop")
+            {
+                ShopItemController any = null;
+                foreach (var si in Game.SceneObjects.All<ShopItemController>()) if (si && si.item && !si.Acquired) { any = si; Plugin.Log.LogInfo($"Harness: shop item {si.item.PickupObjectId} acquired={si.Acquired} price={si.CurrentPrice}"); break; }
+                if (any == null)
+                {
+                    // Shop stock can appear a little after the floor; keep looking for 20 s.
+                    if (t - fightAt < 20f) { fightDone = false; return; }
+                    Plugin.Log.LogWarning("Harness: no shop on this floor");
+                    return;
+                }
+                int k = 0;
+                foreach (var p in gm.AllPlayers)
+                {
+                    if (!p) continue;
+                    p.healthHaver.IsVulnerable = false;
+                    p.carriedConsumables.Currency = 300;
+                    p.WarpToPoint((Vector2)any.transform.position + new Vector2(k * 1.5f - 0.75f, -2.5f));
+                    k++;
+                }
+                Plugin.Log.LogInfo("Harness: warped players into the shop with 300 casings");
+                return;
+            }
             var rooms = new System.Collections.Generic.List<Dungeonator.RoomHandler>();
             foreach (var room in gm.Dungeon.data.rooms)
             {
@@ -142,6 +191,8 @@ namespace GungeonOnline.Dev
                     if (ps != null) net += $" proj[announced={ps.Announced} updates={ps.Updates} copies={ps.Copies} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
                     var pk = Replication.PickupSync.Instance;
                     if (pk != null) net += $" pick[ann={pk.PickupsAnnounced} copies={pk.PickupsCopied} purged={pk.LocalPurged} req={pk.Requests} gives={pk.Gives} givesApplied={pk.GivesApplied} chests={pk.ChestsMapped} chestOpened={pk.ChestsOpened}]";
+                    var sh = Replication.ShopSync.Instance;
+                    if (sh != null) net += $" shop[ann={sh.Announced} mapped={sh.Mapped} restocked={sh.Restocked} req={sh.Requests}]";
                     var inv = Replication.InventorySync.Instance;
                     if (inv != null) net += $" inv[sent={inv.Sent} applied={inv.Applied} added={inv.Added} removed={inv.Removed}]";
                     var vs = Replication.VitalsSync.Instance;
@@ -176,6 +227,7 @@ namespace GungeonOnline.Dev
                 }
             }
             HostFightSetup(t);
+            ClientTestBuy(t);
             TimedShots(t);
             if (DevEnv.QuitAfter > 0 && t >= DevEnv.QuitAfter)
             {

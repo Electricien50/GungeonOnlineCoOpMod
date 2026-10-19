@@ -16,6 +16,7 @@ namespace GungeonOnline.Session
         public sealed class Entry { public string Prefab = ""; public string Name = ""; }
         public readonly Dictionary<int, Entry> Roster = new Dictionary<int, Entry>();
         string sentChoice;
+        PlayerController lastLocal;
 
         void Start()
         {
@@ -43,7 +44,18 @@ namespace GungeonOnline.Session
         {
             if (!NetSession.Active) return;
             var local = PlayerSlots.Local;
-            if (local != null)
+            if (local != lastLocal)
+            {
+                string desc = "";
+                if (GameManager.HasInstance && GameManager.Instance.AllPlayers != null)
+                    foreach (var p in GameManager.Instance.AllPlayers) if (p) desc += $" [{p.name} idx={p.PlayerIDX} id={p.GetInstanceID()}]";
+                Plugin.Log.LogInfo($"LOCALCHANGE scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name} now={(local ? local.name + " id=" + local.GetInstanceID() : "none")} all:{desc}");
+                lastLocal = local;
+                // A character swap at a Breach statue replaces the player object; drop the stale one from the list.
+                if (GameManager.HasInstance) GameManager.Instance.RefreshAllPlayers();
+            }
+            // Characters are chosen in the Breach only; never re-announce mid-run.
+            if (local != null && Foyer.Instance != null)
             {
                 string mine = PrefabOf(local);
                 if (mine != sentChoice)

@@ -368,7 +368,7 @@ namespace GungeonOnline.Replication
 
         void LateUpdate()
         {
-            if (!NetSession.Active || GameManager.Instance.IsLoadingLevel || GameManager.Instance.Dungeon == null) return;
+            if (!NetSession.Active || !SceneObjects.OnDungeonFloor) return;
             if (Time.realtimeSinceStartup < nextScan) return;
             nextScan = Time.realtimeSinceStartup + 0.1f;
             if (NetSession.IsHost) { HostScan(); return; }

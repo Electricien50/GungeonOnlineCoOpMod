@@ -283,6 +283,7 @@ namespace GungeonOnline.Replication
         {
             FloorReady = false;
             PickupSync.Instance?.OnFloorChanged();
+            ShopSync.Instance?.OnFloorChanged();
             replicas.Clear();
             if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); }
         }
@@ -290,6 +291,13 @@ namespace GungeonOnline.Replication
         void OnEvent(Connection c, byte[] data, Delivery d)
         {
             if (data.Length == 0) return;
+            if (data[0] >= 60 && data[0] < 70)
+            {
+                if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
+                var sr = new WireReader(data, 1, data.Length - 1);
+                ShopSync.Instance?.Apply(c, data[0], ref sr);
+                return;
+            }
             if (data[0] >= 50 && data[0] < 60)
             {
                 if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
@@ -320,6 +328,7 @@ namespace GungeonOnline.Replication
                     foreach (var room in GameManager.Instance.Dungeon.data.rooms)
                         if (room.IsSealed) { w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(true); c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered); }
                     PickupSync.Instance?.SendAllTo(c);
+                    ShopSync.Instance?.SendAllTo(c);
                     InventorySync.Instance?.ForceResend();
                     Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready");
                 }
@@ -337,6 +346,7 @@ namespace GungeonOnline.Replication
             try
             {
                 if (type >= 20 && type < 30) { ProjectileSync.Instance?.Apply(type, ref r); return; }
+                if (type >= 60 && type < 70) { ApplyingHost = false; var sr = new WireReader(data, 1, data.Length - 1); ShopSync.Instance?.Apply(null, type, ref sr); return; }
                 if (type == 45) { var ir = new WireReader(data, 1, data.Length - 1); InventorySync.Instance?.Apply(ref ir); return; }
                 if (type >= 50 && type < 60) { ApplyingHost = false; var pr = new WireReader(data, 1, data.Length - 1); PickupSync.Instance?.Apply(null, type, ref pr); return; }
                 switch (type)
