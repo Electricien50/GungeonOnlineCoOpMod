@@ -71,8 +71,8 @@ Enter The Gungeon Online Co-Op Mod is original work. It contains no code from Gu
 
 ## Get it
 
-- Download: https://github.com/Hero88go/EnterTheGungeonOnlineCoOpMod/releases
-- Source, docs and issues: https://github.com/Hero88go/EnterTheGungeonOnlineCoOpMod
+- Download: https://github.com/Hero88go/GungeonOnlineCoOpMod/releases
+- Source, docs and issues: https://github.com/Hero88go/GungeonOnlineCoOpMod
 - License: MIT
 
 Enter the Gungeon is made by Dodge Roll and published by Devolver Digital. Enter The Gungeon Online Co-Op Mod is an unofficial fan project, not affiliated with or endorsed by them. If you don't have the game yet, go buy it.

@@ -20,6 +20,7 @@ namespace GungeonOnline.Game
 
         Lobby lobby;
         readonly Dictionary<int, float> onScreenFade = new Dictionary<int, float>();
+        readonly Dictionary<int, float> offFade = new Dictionary<int, float>();
         readonly Dictionary<int, Vector2> edgeSmooth = new Dictionary<int, Vector2>();
 
         string NameFor(int slot)
@@ -39,6 +40,17 @@ namespace GungeonOnline.Game
         {
             // Playtest harness: show both helpers so the screenshots include them.
             if (System.Environment.GetEnvironmentVariable("GO_PLAYTEST_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.NameTagStyle.Value = 1; NetConfig.FriendCrosshair.Value = true; }
+            // Harness: GO_SHOT_UI="locator,tag,opacity,crosshair" for front-page screenshots, e.g. "5,1,1,0".
+            var su = System.Environment.GetEnvironmentVariable("GO_SHOT_UI");
+            if (!string.IsNullOrEmpty(su))
+            {
+                var p = su.Split(',');
+                int v;
+                if (p.Length > 0 && int.TryParse(p[0], out v)) NetConfig.LocatorStyle.Value = v;
+                if (p.Length > 1 && int.TryParse(p[1], out v)) NetConfig.NameTagStyle.Value = v;
+                if (p.Length > 2 && int.TryParse(p[2], out v)) NetConfig.NameOpacity.Value = v;
+                if (p.Length > 3) NetConfig.FriendCrosshair.Value = p[3] == "1";
+            }
         }
 
         void OnGUI()
@@ -64,7 +76,12 @@ namespace GungeonOnline.Game
                 onScreenFade.TryGetValue(kv.Key, out var f);
                 f = Mathf.MoveTowards(f, on ? 1f : 0f, dt / 0.18f);
                 onScreenFade[kv.Key] = f;
-                float onA = GungeonUI.Ease(f), offA = 1f - onA;
+                // The locator only shows once your friend is fully off your screen, so tag and locator never overlap.
+                bool fullyOff = !(vp.z > 0 && vf.x > -0.02f && vf.x < 1.02f && vf.y > -0.04f && vp.y < 1.04f);
+                offFade.TryGetValue(kv.Key, out var g);
+                g = Mathf.MoveTowards(g, fullyOff ? 1f : 0f, dt / 0.18f);
+                offFade[kv.Key] = g;
+                float onA = GungeonUI.Ease(f), offA = GungeonUI.Ease(g);
                 string name = NameFor(kv.Key);
                 if (tag > 0 && onA > 0.01f)
                 {

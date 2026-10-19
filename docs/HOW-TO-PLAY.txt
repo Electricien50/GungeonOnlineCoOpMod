@@ -24,4 +24,4 @@ PLAY
   Both players need the same version of the mod.
   If the connection drops, the run waits for you and you reconnect by yourself.
   Problem? Settings, Help, Save report, then open an issue on GitHub:
-  https://github.com/Hero88go/EnterTheGungeonOnlineCoOpMod/issues
+  https://github.com/Hero88go/GungeonOnlineCoOpMod/issues
