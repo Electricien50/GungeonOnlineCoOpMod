@@ -321,6 +321,12 @@ namespace GungeonOnline.Replication
                             string name = r.Str();
                             var pos = new Vector2(r.F32(), r.F32());
                             bool open = r.Bool();
+                            // Re-announcements (resync, late join) update the chest we already have.
+                            if (clientChests.TryGetValue(id, out var known) && known)
+                            {
+                                if (open && !known.IsOpen) known.ForceOpen(PlayerSlots.Local);
+                                break;
+                            }
                             var ch = NearestChest(pos) ?? SpawnChest(name, pos);
                             if (ch == null) break;
                             clientChests[id] = ch;
