@@ -107,6 +107,12 @@ A lot of online mods feel great for twenty minutes and then the two games quietl
 2. Close the game and double-click **`Install Gungeon Online.bat`**. It finds Enter the Gungeon by itself (every Steam library, GOG, Epic) and installs BepInEx and the mod. If it can't find the game, it asks for the folder.
 3. To remove it later, double-click **`Uninstall Gungeon Online.bat`**.
 
+**Manual install (no .bat):**
+1. Unzip `GungeonOnline.zip`.
+2. Open your game folder, the one with `EtG.exe`. Steam: right-click Enter the Gungeon, Manage, Browse local files. GOG Galaxy: the game, Manage installation, Show folder.
+3. Copy everything inside the zip's `files` folder into the game folder (the `BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`).
+4. Start the game. To uninstall, delete `BepInEx/plugins/GungeonOnline` (or the whole `BepInEx` folder and `winhttp.dll`).
+
 Both players need the same version of the mod. The game tells you if they differ.
 
 ## Play
