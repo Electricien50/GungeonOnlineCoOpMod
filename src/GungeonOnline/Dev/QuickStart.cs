@@ -26,7 +26,7 @@ namespace GungeonOnline.Dev
             while (Time.realtimeSinceStartup < giveUp)
             {
                 // Do not wait on IsSelectingCharacter: at high frame rates it can flip before this loop sees it.
-                if (Foyer.Instance != null && GameManager.HasInstance && GameManager.Instance.PrimaryPlayer == null)
+                if (Game.SceneObjects.InBreach && GameManager.HasInstance && GameManager.Instance.PrimaryPlayer == null)
                 {
                     foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>())
                         if (!f.IsCoopCharacter && !f.IsAlternateCostume && f.CharacterPrefabPath != null &&
@@ -41,7 +41,7 @@ namespace GungeonOnline.Dev
             yield return new WaitForSeconds(1f);
             if (GameManager.Instance.PrimaryPlayer != null) { Plugin.Log.LogInfo("QuickStart: player already chosen"); ScenarioRunner.Begin(); yield break; }
             Plugin.Log.LogInfo("QuickStart: selecting " + pick.CharacterPrefabPath);
-            Foyer.Instance.StartCoroutine(Foyer.Instance.OnSelectedCharacter(0.05f, pick));
+            Game.SceneObjects.Breach.StartCoroutine(Game.SceneObjects.Breach.OnSelectedCharacter(0.05f, pick));
             while (GameManager.Instance.PrimaryPlayer == null) yield return null;
             Plugin.Log.LogInfo("QuickStart: player spawned at " + GameManager.Instance.PrimaryPlayer.CenterPosition);
             ScenarioRunner.Begin();

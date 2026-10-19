@@ -87,7 +87,7 @@ namespace GungeonOnline.Replication
 
         public void OnFloorChanged()
         {
-            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear();
+            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear();
             copies.Clear(); copyIdByInstance.Clear(); clientChests.Clear(); chestIdByInstance.Clear();
         }
 
@@ -188,18 +188,34 @@ namespace GungeonOnline.Replication
             return (i >= 0 ? n.Substring(0, i) : n).Trim();
         }
 
+        static readonly Dictionary<int, PickupObject> pickupOfDebris = new Dictionary<int, PickupObject>();
+
+        /// <summary>Items lying in the world. Dropped items are debris objects, which the game keeps in a list,
+        /// so this avoids searching the whole scene.</summary>
+        static IEnumerable<PickupObject> WorldPickups()
+        {
+            foreach (var d in StaticReferenceManager.AllDebris)
+            {
+                if (!d) continue;
+                int k = d.GetInstanceID();
+                if (!pickupOfDebris.TryGetValue(k, out var p)) pickupOfDebris[k] = p = d.GetComponent<PickupObject>();
+                if (p) yield return p;
+            }
+        }
+
+        readonly Dictionary<int, uint> hostIdByInstance = new Dictionary<int, uint>();
+
         void HostScan()
         {
             var seen = new HashSet<uint>();
-            foreach (var p in FindObjectsOfType<PickupObject>())
+            foreach (var p in WorldPickups())
             {
                 if (!InWorld(p)) continue;
-                uint id = 0;
-                foreach (var kv in hostPickups) if (kv.Value == p) { id = kv.Key; break; }
-                if (id == 0)
+                if (!hostIdByInstance.TryGetValue(p.GetInstanceID(), out var id))
                 {
                     id = nextId++;
                     hostPickups[id] = p;
+                    hostIdByInstance[p.GetInstanceID()] = id;
                     Send(PickupMsg(id, p));
                     PickupsAnnounced++;
                 }
@@ -208,6 +224,7 @@ namespace GungeonOnline.Replication
             foreach (var id in new List<uint>(hostPickups.Keys))
             {
                 if (seen.Contains(id)) continue;
+                if (hostPickups[id]) hostIdByInstance.Remove(hostPickups[id].GetInstanceID());
                 hostPickups.Remove(id);
                 w.Reset(); w.U8(EvPickupGone); w.U32(id);
                 Send(w.ToArray());
@@ -381,7 +398,7 @@ namespace GungeonOnline.Replication
             if (NetSession.IsHost) { HostScan(); return; }
             if (WorldSync.Instance == null || !WorldSync.Instance.FloorReady) return;
             // Client: anything on the ground that the host did not send was generated here; remove it.
-            foreach (var p in FindObjectsOfType<PickupObject>())
+            foreach (var p in new List<PickupObject>(WorldPickups()))
             {
                 if (!InWorld(p) || copyIdByInstance.ContainsKey(p.GetInstanceID())) continue;
                 Destroy(p.gameObject);

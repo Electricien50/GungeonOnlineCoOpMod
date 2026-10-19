@@ -88,10 +88,10 @@ namespace GungeonOnline.Game
             Plugin.Log.LogInfo($"RunSync: host says load index {index} seed {seed}");
             clientAllowed = true;
             Replication.WorldSync.Instance?.OnFloorUnloading();
-            bool fromFoyer = Foyer.Instance != null;
+            bool fromFoyer = Game.SceneObjects.InBreach;
             if (Pixelator.Instance) Pixelator.Instance.FadeToBlack(0.2f);
             gm.LoadNextLevel();
-            if (fromFoyer) Foyer.Instance.OnDepartedFoyer();
+            if (fromFoyer) Game.SceneObjects.Breach.OnDepartedFoyer();
         }
 
         void Update()

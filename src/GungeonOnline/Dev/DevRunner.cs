@@ -56,7 +56,7 @@ namespace GungeonOnline.Dev
         void HostFloorCycle(float t)
         {
             var v = System.Environment.GetEnvironmentVariable("GO_FLOOR_EVERY");
-            if (v == null || !Session.NetSession.IsHost || Foyer.Instance != null || GameManager.Instance.IsLoadingLevel) return;
+            if (v == null || !Session.NetSession.IsHost || Game.SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel) return;
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + GameManager.Instance.CurrentFloor;
             if (scene != floorScene) { floorScene = scene; floorSince = t; fightDone = false; fightAt = -1f; return; }
             if (!float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var every)) return;
@@ -64,6 +64,25 @@ namespace GungeonOnline.Dev
             floorSince = t + 1000f;
             Plugin.Log.LogInfo($"Harness: next floor (was floor {GameManager.Instance.CurrentFloor})");
             GameManager.Instance.DelayedLoadNextLevel(0.5f);
+        }
+
+        bool lowHpDone;
+
+        /// <summary>Harness client (GO_LOW_HP=1): once on a floor, drop to half a heart so the next hit kills.</summary>
+        void ClientLowHp()
+        {
+            if (lowHpDone || System.Environment.GetEnvironmentVariable("GO_LOW_HP") != "1") return;
+            if (!Session.NetSession.Active || Session.NetSession.IsHost || Game.SceneObjects.InBreach) return;
+            var ws = Replication.WorldSync.Instance;
+            var me = GameManager.Instance.PrimaryPlayer;
+            if (ws == null || !ws.FloorReady || me == null) return;
+            lowHpDone = true;
+            // Through a real hit, so it is reported to the host like any other.
+            me.healthHaver.Armor = 0f;
+            // Player hits are capped at half a heart: set one heart, then take one reported half-heart hit.
+            me.healthHaver.ForceSetCurrentHealth(1f);
+            me.healthHaver.ApplyDamage(0.5f, Vector2.zero, "harness", CoreDamageTypes.None, DamageCategory.Normal, true);
+            Plugin.Log.LogInfo("Harness: client at half a heart");
         }
 
         float buyAt = -1f;
@@ -75,7 +94,7 @@ namespace GungeonOnline.Dev
             if (bought || System.Environment.GetEnvironmentVariable("GO_TEST_BUY") != "1") return;
             if (!Session.NetSession.Active || Session.NetSession.IsHost) return;
             var me = GameManager.Instance.PrimaryPlayer;
-            if (me == null || Foyer.Instance != null) return;
+            if (me == null || Game.SceneObjects.InBreach) return;
             ShopItemController best = null;
             float bestD = 36f;
             foreach (var si in FindObjectsOfType<ShopItemController>())
@@ -105,7 +124,7 @@ namespace GungeonOnline.Dev
             if (fightDone || mode == null || !Session.NetSession.IsHost) return;
             var ws = Replication.WorldSync.Instance;
             var gm = GameManager.Instance;
-            if (ws == null || ws.ReadyPeers == 0 || gm.Dungeon == null || Foyer.Instance != null) return;
+            if (ws == null || ws.ReadyPeers == 0 || gm.Dungeon == null || Game.SceneObjects.InBreach) return;
             if (fightAt < 0) { fightAt = t + 3f; return; }
             if (t < fightAt) return;
             fightDone = true;
@@ -132,11 +151,30 @@ namespace GungeonOnline.Dev
                 Plugin.Log.LogInfo("Harness: warped players into the shop with 300 casings");
                 return;
             }
+            if (mode == "boss")
+            {
+                Dungeonator.RoomHandler bossRoom = null;
+                foreach (var room in gm.Dungeon.data.rooms)
+                    if (room.area != null && room.area.PrototypeRoomCategory == PrototypeDungeonRoom.RoomCategory.BOSS) { bossRoom = room; break; }
+                if (bossRoom == null) { Plugin.Log.LogWarning("Harness: no boss room"); return; }
+                int bi = 0;
+                foreach (var p in gm.AllPlayers)
+                {
+                    if (!p) continue;
+                    p.healthHaver.IsVulnerable = false;
+                    var spot = bossRoom.GetCenteredVisibleClearSpot(2, 2);
+                    p.WarpToPoint(spot.ToVector2() + new Vector2(0.5f + bi, -3f));
+                    bi++;
+                }
+                Plugin.Log.LogInfo("Harness: warped players into the boss room " + bossRoom.GetRoomName());
+                return;
+            }
             var rooms = new System.Collections.Generic.List<Dungeonator.RoomHandler>();
             foreach (var room in gm.Dungeon.data.rooms)
             {
                 var list = room.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear);
-                if (list != null && list.Count >= 2 && room != gm.Dungeon.data.Entrance) rooms.Add(room);
+                // Minecart rooms are not replicated yet (carts drive player positions); keep the harness out of them.
+                if (list != null && list.Count >= 2 && room != gm.Dungeon.data.Entrance && !room.GetRoomName().Contains("Cart")) rooms.Add(room);
             }
             rooms.Sort((x, y) => y.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear).Count.CompareTo(x.GetActiveEnemies(Dungeonator.RoomHandler.ActiveEnemyType.RoomClear).Count));
             if (rooms.Count == 0) { Plugin.Log.LogWarning("Harness: no fight room"); return; }
@@ -220,6 +258,8 @@ namespace GungeonOnline.Dev
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" hpR{kv.Key}={kv.Value.healthHaver.GetCurrentHealth()}";
                     if (gm.PrimaryPlayer != null) net += $" money={gm.PrimaryPlayer.carriedConsumables.Currency} guns={gm.PrimaryPlayer.inventory.AllGuns.Count} passives={gm.PrimaryPlayer.passiveItems.Count}";
                     foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" R{kv.Key}guns={kv.Value.inventory.AllGuns.Count} R{kv.Key}passives={kv.Value.passiveItems.Count}";
+                    if (gm.PrimaryPlayer != null) net += $" ghost0={gm.PrimaryPlayer.IsGhost} dead0={gm.PrimaryPlayer.healthHaver.IsDead}";
+                    foreach (var kv in Game.PlayerSlots.Remotes) if (kv.Value) net += $" ghostR{kv.Key}={kv.Value.IsGhost} deadR{kv.Key}={kv.Value.healthHaver.IsDead}";
                     net += $" hp0={(gm.PrimaryPlayer != null ? gm.PrimaryPlayer.healthHaver.GetCurrentHealth() : -1)}";
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
@@ -234,7 +274,7 @@ namespace GungeonOnline.Dev
                     Plugin.Log.LogInfo(tr);
                 }
             }
-            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Foyer.Instance != null && GameManager.Instance.AllPlayers.Length >= 2)
+            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Game.SceneObjects.InBreach && GameManager.Instance.AllPlayers.Length >= 2)
             {
                 if (bothSince < 0) bothSince = t;
                 if (t - bothSince >= DevEnv.StartRunAt)
@@ -243,11 +283,12 @@ namespace GungeonOnline.Dev
                     Plugin.Log.LogInfo("Harness: host leaving the Breach");
                     Pixelator.Instance.FadeToBlack(0.5f);
                     GameManager.Instance.DelayedLoadNextLevel(0.75f);
-                    Foyer.Instance.OnDepartedFoyer();
+                    Game.SceneObjects.Breach.OnDepartedFoyer();
                 }
             }
             HostFloorCycle(t);
             HostFightSetup(t);
+            ClientLowHp();
             ClientTestBuy(t);
             TimedShots(t);
             if (DevEnv.QuitAfter > 0 && t >= DevEnv.QuitAfter)

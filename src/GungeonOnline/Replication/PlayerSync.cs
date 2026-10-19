@@ -141,8 +141,23 @@ namespace GungeonOnline.Replication
         {
             var t = T(slot);
             if (seq <= t.LastReconciledSeq) return;
-            if (!t.History.TryGetValue(seq, out var mine)) return; // not simulated here yet (remote ahead of us)
             if (p.specRigidbody == null || GameManager.Instance.IsLoadingLevel) return;
+            if (!t.History.TryGetValue(seq, out var mine))
+            {
+                // No record for that input (after a load, a warp, a stalled stream): if we are far off, go there.
+                var off = hostPos - (Vector2)p.transform.position;
+                if (off.magnitude > SnapDistance * 2f)
+                {
+                    t.Snaps++;
+                    t.PendingCorrection = Vector2.zero;
+                    t.History.Clear();
+                    t.LastReconciledSeq = seq;
+                    p.transform.position = new Vector3(hostPos.x, hostPos.y, p.transform.position.z);
+                    p.specRigidbody.Reinitialize();
+                    Plugin.Log.LogInfo($"SYNC slot={slot} hard snap {off.magnitude:F1} (no history for {seq})");
+                }
+                return;
+            }
             t.LastReconciledSeq = seq;
             var err = hostPos - mine;
             t.LastError = err.magnitude;

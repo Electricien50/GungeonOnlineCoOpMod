@@ -51,6 +51,8 @@ namespace GungeonOnline.Replication
         public int TrackedCount => lastSent.Count;
         public int ReadyPeers => ready.Count;
         public bool IsReady(Connection c) => ready.Contains(c);
+        public bool DeathAnnounced(uint id) => deathSent.Contains(id);
+        public bool IsReplica(uint id) => replicas.ContainsKey(id);
         public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied, LocalActorsSuppressed, SpawnFailures;
 
         readonly WireWriter w = new WireWriter(2048);
@@ -143,6 +145,7 @@ namespace GungeonOnline.Replication
         {
             if (!IsHostSession || Instance == null) return;
             uint id = NetIds.Of(__instance);
+            if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"DEATHSEND {id} {__instance.EnemyGuid} t={Time.realtimeSinceStartup:F2}");
             if (id == 0 || !Instance.deathSent.Add(id)) return;
             var w = Instance.w;
             w.Reset(); w.U8(EvDeath); w.U32(id); w.F32(finalDamageDirection.x); w.F32(finalDamageDirection.y);
@@ -199,6 +202,7 @@ namespace GungeonOnline.Replication
                 if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid) || a.CompanionOwner != null) continue;
                 uint id = NetIds.Assign(a);
                 var msg = SpawnMessage(id, a);
+                if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNSEND {id} {a.EnemyGuid} ready={ready.Count} t={Time.realtimeSinceStartup:F2}");
                 foreach (var c in ready) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
                 SpawnsSent++;
             }
@@ -459,6 +463,7 @@ namespace GungeonOnline.Replication
             var pos = new Vector2(r.F32(), r.F32());
             var room = RoomAt(r.I16()) ?? pos.GetAbsoluteRoom();
             if (replicas.ContainsKey(id)) return;
+            if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNRECV {id} {guid} t={Time.realtimeSinceStartup:F2}");
             var prefab = EnemyDatabase.GetOrLoadByGuid(guid);
             if (prefab == null) { SpawnFailures++; Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
             ProjectileSync.LearnBank(prefab);
@@ -466,6 +471,7 @@ namespace GungeonOnline.Replication
             if (a == null) { SpawnFailures++; Plugin.Log.LogWarning($"WorldSync: spawn of {id} ({guid}) failed"); return; }
             MakeReplica(a);
             NetIds.Bind(id, a);
+            if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNAPPLY {id} t={Time.realtimeSinceStartup:F2}");
             replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup };
             SpawnsApplied++;
         }

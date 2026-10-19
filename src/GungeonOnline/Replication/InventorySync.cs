@@ -153,8 +153,11 @@ namespace GungeonOnline.Replication
         {
             var prefab = PickupObjectDatabase.GetById(id);
             if (prefab == null) return;
+            int before = p.inventory.AllGuns.Count + p.passiveItems.Count + p.activeItems.Count;
             LootEngine.GivePrefabToPlayer(prefab.gameObject, p);
             Added++;
+            if (p.inventory.AllGuns.Count + p.passiveItems.Count + p.activeItems.Count == before)
+                Plugin.Log.LogWarning($"InventorySync: giving item {id} ({prefab.name}) to {p.name} had no effect");
         }
     }
 }

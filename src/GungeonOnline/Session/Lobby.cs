@@ -55,7 +55,7 @@ namespace GungeonOnline.Session
                 if (GameManager.HasInstance) GameManager.Instance.RefreshAllPlayers();
             }
             // Characters are chosen in the Breach only; never re-announce mid-run.
-            if (local != null && Foyer.Instance != null)
+            if (local != null && Game.SceneObjects.InBreach)
             {
                 string mine = PrefabOf(local);
                 if (mine != sentChoice)

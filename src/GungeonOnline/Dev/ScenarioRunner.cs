@@ -24,12 +24,13 @@ namespace GungeonOnline.Dev
         static float t0 = -1f;
         static NetInputDevice device;
 
-        static bool bot;
+        static bool bot, passive;
         static float botPhase;
 
         public static void Begin()
         {
-            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight")
+            passive = System.Environment.GetEnvironmentVariable("GO_BOT") == "passive";
+            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight" || passive)
             {
                 bot = true;
                 device = InputPump.Route(0);
@@ -64,7 +65,7 @@ namespace GungeonOnline.Dev
             var f = new InputFrame();
             var me = GameManager.Instance.PrimaryPlayer;
             // In the Breach, interacting would swap characters at the statues; the bot only plays dungeon floors.
-            if (me == null || Foyer.Instance != null) return f;
+            if (me == null || Game.SceneObjects.InBreach) return f;
             AIActor best = null;
             float bestD = 1e9f;
             foreach (var e in StaticReferenceManager.AllEnemies)
@@ -78,7 +79,7 @@ namespace GungeonOnline.Dev
             var to = (best.CenterPosition - me.CenterPosition).normalized;
             f.Aim = to;
             botPhase += Time.deltaTime;
-            f.Set(NetButton.Shoot, (botPhase % 0.3f) < 0.2f);
+            if (!passive) f.Set(NetButton.Shoot, (botPhase % 0.3f) < 0.2f);
             var strafe = new Vector2(-to.y, to.x) * (Mathf.Sin(t * 0.7f) > 0 ? 1f : -1f);
             float dist = Mathf.Sqrt(bestD);
             f.Move = (strafe + (dist > 6f ? to : dist < 3f ? -to : Vector2.zero)).normalized;

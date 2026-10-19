@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Reflection.Emit;
 using HarmonyLib;
 using GungeonOnline.Game;
 
@@ -17,7 +19,42 @@ namespace GungeonOnline.Camera
             // would pin the other player to the edge of your screen, so it is off online.
             h.Patch(AccessTools.Method(typeof(PlayerController), "CameraBoundsMovementRestrictor"),
                 prefix: new HarmonyMethod(typeof(IndependentCamera), nameof(SkipInSession)));
+            // The shared camera ignores ghosts; your own camera must keep following you as a ghost.
+            h.Patch(AccessTools.Method(typeof(CameraController), nameof(CameraController.GetCoreCurrentBasePosition)),
+                transpiler: new HarmonyMethod(typeof(IndependentCamera), nameof(GhostFieldTranspiler)));
+            // Vanilla warps a ghost that leaves the shared camera back to its partner; online each has a camera.
+            h.Patch(AccessTools.Method(typeof(PlayerController), "Update"),
+                transpiler: new HarmonyMethod(typeof(IndependentCamera), nameof(GhostVisibilityTranspiler)));
         }
+
+        static IEnumerable<CodeInstruction> GhostFieldTranspiler(IEnumerable<CodeInstruction> code)
+        {
+            var field = AccessTools.Field(typeof(PlayerController), nameof(PlayerController.IsGhost));
+            var repl = AccessTools.Method(typeof(IndependentCamera), nameof(GhostForCamera));
+            foreach (var ci in code)
+            {
+                if (ci.opcode == OpCodes.Ldfld && ci.operand as System.Reflection.FieldInfo == field)
+                    yield return new CodeInstruction(OpCodes.Call, repl) { labels = ci.labels };
+                else yield return ci;
+            }
+        }
+
+        public static bool GhostForCamera(PlayerController p) => p.IsGhost && !(Session.NetSession.Active && p == PlayerSlots.Local);
+
+        static IEnumerable<CodeInstruction> GhostVisibilityTranspiler(IEnumerable<CodeInstruction> code)
+        {
+            var target = AccessTools.Method(typeof(CameraController), nameof(CameraController.PointIsVisible), new[] { typeof(UnityEngine.Vector2), typeof(float) });
+            var repl = AccessTools.Method(typeof(IndependentCamera), nameof(GhostPointVisible));
+            foreach (var ci in code)
+            {
+                if ((ci.opcode == OpCodes.Callvirt || ci.opcode == OpCodes.Call) && ci.operand as System.Reflection.MethodInfo == target)
+                    yield return new CodeInstruction(OpCodes.Call, repl) { labels = ci.labels };
+                else yield return ci;
+            }
+        }
+
+        public static bool GhostPointVisible(CameraController cc, UnityEngine.Vector2 point, float buffer) =>
+            Session.NetSession.Active || cc.PointIsVisible(point, buffer);
 
         static bool SkipInSession() => !Session.NetSession.Active;
 

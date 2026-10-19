@@ -40,8 +40,10 @@ namespace GungeonOnline.Replication
         static List<uint> AliveEnemyIds()
         {
             var ids = new List<uint>();
+            // "Alive" means no death event yet: some enemies sit at zero health through a death animation first.
+            var ws = WorldSync.Instance;
             foreach (var kv in NetIds.All)
-                if (kv.Value is AIActor a && a && a.healthHaver && !a.healthHaver.IsDead) ids.Add(kv.Key);
+                if (kv.Value is AIActor a && a && ws != null && !ws.DeathAnnounced(kv.Key) && (NetSession.IsHost || ws.IsReplica(kv.Key))) ids.Add(kv.Key);
             ids.Sort();
             return ids;
         }

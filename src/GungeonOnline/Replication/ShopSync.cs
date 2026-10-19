@@ -26,7 +26,8 @@ namespace GungeonOnline.Replication
         readonly Dictionary<uint, ShopItemController> clientItems = new Dictionary<uint, ShopItemController>();
         static readonly Dictionary<int, uint> clientIdByInstance = new Dictionary<int, uint>();
         uint nextId = 1;
-        float nextScan;
+        float nextScan, nextFullScan;
+        readonly Dictionary<int, uint> hostIds = new Dictionary<int, uint>();
         public int Announced, Mapped, Restocked, Requests;
         readonly WireWriter w = new WireWriter(96);
 
@@ -41,7 +42,7 @@ namespace GungeonOnline.Replication
 
         public void OnFloorChanged()
         {
-            hostItems.Clear(); lastKey.Clear(); clientItems.Clear(); clientIdByInstance.Clear();
+            hostItems.Clear(); lastKey.Clear(); clientItems.Clear(); clientIdByInstance.Clear(); hostIds.Clear(); nextFullScan = 0;
         }
 
         static bool InteractPrefix(ShopItemController __instance, PlayerController player)
@@ -97,12 +98,18 @@ namespace GungeonOnline.Replication
             if (!NetSession.Active || !NetSession.IsHost || !SceneObjects.OnDungeonFloor) return;
             if (Time.realtimeSinceStartup < nextScan) return;
             nextScan = Time.realtimeSinceStartup + 0.25f;
-            foreach (var s in SceneObjects.All<ShopItemController>())
+            // Full scene search only every 5 s (shops are created with the floor); state checks use the known list.
+            if (Time.realtimeSinceStartup >= nextFullScan)
             {
+                nextFullScan = Time.realtimeSinceStartup + 5f;
+                foreach (var found in SceneObjects.All<ShopItemController>())
+                    if (found && !hostIds.ContainsKey(found.GetInstanceID())) { uint nid = nextId++; hostItems[nid] = found; hostIds[found.GetInstanceID()] = nid; Announced++; }
+            }
+            foreach (var kv0 in new List<KeyValuePair<uint, ShopItemController>>(hostItems))
+            {
+                var s = kv0.Value;
                 if (!s) continue;
-                uint id = 0;
-                foreach (var kv in hostItems) if (kv.Value == s) { id = kv.Key; break; }
-                if (id == 0) { id = nextId++; hostItems[id] = s; Announced++; }
+                uint id = kv0.Key;
                 string key = KeyOf(s);
                 if (lastKey.TryGetValue(id, out var prev) && prev == key) continue;
                 lastKey[id] = key;

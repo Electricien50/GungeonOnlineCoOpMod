@@ -83,7 +83,7 @@ namespace GungeonOnline.Game
             GameUIRoot.Instance.ConvertCoreUIToCoopMode();
             PhysicsEngine.Instance.RegisterOverlappingGhostCollisionExceptions(p.specRigidbody);
             GameManager.Instance.MainCameraController.ClearPlayerCache();
-            if (Foyer.Instance != null) Foyer.Instance.ProcessPlayerEnteredFoyer(p);
+            if (Game.SceneObjects.InBreach) Game.SceneObjects.Breach.ProcessPlayerEnteredFoyer(p);
             // Vanilla co-op restores input when the join conversation ends; there is no conversation here.
             p.CurrentInputState = PlayerInputState.AllInput;
             RefreshFoyerForCoopChange();
@@ -117,7 +117,7 @@ namespace GungeonOnline.Game
         /// </summary>
         static void RefreshFoyerForCoopChange()
         {
-            if (Foyer.Instance == null) return;
+            if (!Game.SceneObjects.InBreach) return;
             try { AccessTools.Method(typeof(Foyer), "ToggleTutorialBlocker").Invoke(Foyer.Instance, new object[] { Local }); }
             catch (System.Exception e) { Plugin.Log.LogWarning("Foyer refresh: " + e.Message); }
         }
