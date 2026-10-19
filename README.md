@@ -5,7 +5,7 @@
 <h1 align="center">Enter The Gungeon Online Co-Op Mod</h1>
 
 <p align="center">
-  <b>Online co-op for Enter the Gungeon. Your own camera. No input lag on your own character. No desyncs.</b>
+  <b>Online co-op with independent cameras. Choose any character! Free and open source.</b>
 </p>
 
 <p align="center">
@@ -19,7 +19,31 @@
 
 ---
 
-Enter the Gungeon's co-op is couch co-op: one screen, one camera, and player two is stuck as the Cultist. **Enter The Gungeon Online Co-Op Mod** turns it into real online co-op. Each player plays on their own PC, with their own controller, their own camera and any Gungeoneer they like, through the full run.
+Gungeon's co-op has always been couch co-op: one shared camera, and player two is stuck as the Cultist. I wanted to play with a friend across the country, so I built this.
+
+**Your own camera.** Each player plays on their own PC with their own screen, controller and HUD. Boss intros and kill cams still play for both of you.
+
+**Play it your way: two co-op styles** (the host picks in Settings):
+- *Classic* (default): vanilla rules. When one of you starts a fight, the other is pulled into the room, just like local co-op. You always fight together, but each of you keeps your own camera.
+- *Explore*: split up as much as you like. Only one room can be in a fight at a time, so nobody starts a second fight alone, and nobody gets teleported.
+
+**Choose any character.** Pilot, Convict, Marine, Hunter, Robot, Bullet, anyone you've unlocked. Both players can even pick the same one. No more forced Cultist.
+
+**Built so it can't desync.** This was the thing I cared about most. A lot of online mods feel great for twenty minutes, then the two games quietly drift apart and you're shooting enemies your friend can't see. Enter The Gungeon Online Co-Op Mod is designed so that can't happen. The host runs the one real game and your PC follows it. Every second both games compare enemies, rooms, chests, health, money and inventories, and any difference is fixed on the spot. Your own character still reacts on the frame you press, with nothing waiting on the network.
+
+**Runs can't be lost.**
+- Short Wi-Fi hiccup: play just carries on.
+- Someone drops for longer or their game crashes: the run pauses and waits for them, with no time limit. They reconnect and get their character, guns, items, health and spot back.
+- The host crashes: the run is backed up every floor and every two minutes. The host restarts, picks *Resume saved run*, and you're back in.
+- Quick restart is turned off online, so nobody can throw the run away by accident.
+
+**Two ways to join.**
+- **Invite code:** host the game and a short code is copied for you. Send it to your friend, they pick *Join*, done. Works on Steam, GOG and Epic.
+- **Steam invite:** on Steam, pick *Invite Steam friend* and your friend accepts from the Steam overlay, like any Steam game.
+
+**Easy to set up.** Steam, GOG and Epic copies all play together. A one-click installer finds your game. Pick *Play Online* from the pause menu (or hold Back + Start). It works with a controller.
+
+**4-player support is in active development** and it's the next thing coming. The netcode was built for 4 from day one; today it's 2 because that's what Gungeon itself supports. A Free for all style (fight in different rooms at the same time) is coming too.
 
 <table>
   <tr>
@@ -79,27 +103,6 @@ Yes. Nothing from the game is included. Each player needs their own copy.
 
 **Will it touch my saves?**
 Your normal save is used and gets credit for runs you play online. Run backups go in `BepInEx/GungeonOnline/backups/`.
-
-## Why it feels good
-
-### Independent cameras
-Nobody drags the other player's screen around. Explore and loot cleared rooms on your own while your friend does the same. Nobody is pulled into a fight they didn't walk into, and the screen never stops you at the edge because your partner went the other way. Boss intros and kill cams still play for both players, like in vanilla.
-
-### No input lag on your own character
-Your Gungeoneer reacts on the frame you press, on your own PC. Movement, aiming, dodge rolls and shots never wait for the network. The host replays your inputs on its side and smooths away any small difference. Your friend's character, the enemies and the bullets arrive as fast as the connection allows: packets are applied the frame they land, nothing is held back to batch, and inputs are sent redundantly so a lost packet costs nothing.
-
-### Classic or Explore: the host picks
-- **Classic** (default): vanilla rules. When one of you starts a fight, the other is pulled into the room, just like local co-op. Each of you keeps your own camera.
-- **Explore**: split up as much as you like. Only one room can be in a fight at a time, so nobody starts a second fight alone, and nobody gets teleported.
-
-### Built so it cannot desync
-A lot of online mods feel great for twenty minutes and then the two games quietly split apart. Here one game is the truth: the host runs the real run, and every other PC follows it. Every second both sides compare enemies, rooms, chests, health, money and inventories, and any difference is repaired on the spot. Long sessions stay in sync.
-
-### A run is never lost
-- **Short drop (up to 20 s):** play carries on once packets flow again.
-- **Longer drop or a crash:** the host's world freezes with a banner and waits as long as it takes. Your game reconnects by itself and you get your character, items, health and spot back.
-- **Host crash:** the host's game backs up the run at every floor and every two minutes. Restart, pick *Resume saved run*, and your friend rejoins.
-- Quick restart is off online, so a stray button press can't throw a run away.
 
 ## Features
 
