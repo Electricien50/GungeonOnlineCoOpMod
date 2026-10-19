@@ -17,6 +17,7 @@ namespace GungeonOnline.Session
         Event = 3,
         Lobby = 4,
         World = 5,
+        Props = 6,
     }
 
     /// <summary>

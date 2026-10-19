@@ -332,6 +332,7 @@ namespace GungeonOnline.Replication
             Game.SecondFightLock.Reset();
             PickupSync.Instance?.OnFloorChanged();
             ShopSync.Instance?.OnFloorChanged();
+            PropSync.Instance?.OnFloorChanged();
             replicas.Clear();
             if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); }
         }
@@ -339,6 +340,13 @@ namespace GungeonOnline.Replication
         void OnEvent(Connection c, byte[] data, Delivery d)
         {
             if (data.Length == 0) return;
+            if (data[0] >= 80 && data[0] < 90)
+            {
+                if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
+                var qr = new WireReader(data, 1, data.Length - 1);
+                PropSync.Instance?.Apply(data[0], ref qr);
+                return;
+            }
             if (data[0] >= 70 && data[0] < 80)
             {
                 if (!NetSession.IsHost && !FloorReady) return; // summaries before the floor is ready are meaningless
@@ -403,6 +411,7 @@ namespace GungeonOnline.Replication
             {
                 if (type >= 20 && type < 30) { ProjectileSync.Instance?.Apply(type, ref r); return; }
                 if (type >= 60 && type < 70) { ApplyingHost = false; var sr = new WireReader(data, 1, data.Length - 1); ShopSync.Instance?.Apply(null, type, ref sr); return; }
+                if (type >= 80 && type < 90) { ApplyingHost = false; var qr = new WireReader(data, 1, data.Length - 1); PropSync.Instance?.Apply(type, ref qr); return; }
                 if (type == 45) { var ir = new WireReader(data, 1, data.Length - 1); InventorySync.Instance?.Apply(ref ir); return; }
                 if (type >= 50 && type < 60) { ApplyingHost = false; var pr = new WireReader(data, 1, data.Length - 1); PickupSync.Instance?.Apply(null, type, ref pr); return; }
                 switch (type)

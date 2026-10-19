@@ -35,6 +35,7 @@ namespace GungeonOnline
             Replication.VitalsSync.Install(harmony);
             Replication.PickupSync.Install(harmony);
             Replication.ShopSync.Install(harmony);
+            Replication.PropSync.Install(harmony);
             Dev.QuickStart.Prepare();
             Log.LogInfo($"{Name} {Version} loaded. game={Session.NetSession.GameHash} dev={Dev.DevEnv.Summary()}");
             gameObject.AddComponent<Session.NetSession>();
@@ -50,6 +51,7 @@ namespace GungeonOnline
             gameObject.AddComponent<Replication.InventorySync>();
             gameObject.AddComponent<Replication.ShopSync>();
             gameObject.AddComponent<Replication.Checksum>();
+            gameObject.AddComponent<Replication.PropSync>();
             gameObject.AddComponent<Dev.DevRunner>();
             StartCoroutine(Dev.QuickStart.Run());
             Dev.AutoSession.Begin();
