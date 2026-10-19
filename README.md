@@ -58,17 +58,33 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-1. Download `GungeonOnline.zip` from [Releases](../../releases) and unzip it anywhere.
-2. Close the game and double-click **`Install Gungeon Online.bat`**. It finds Enter the Gungeon by itself (every Steam library, GOG, Epic) and installs BepInEx and the mod. If it can't find the game, it asks for the folder.
-3. To remove it later, double-click **`Uninstall Gungeon Online.bat`**.
+Download **`GungeonOnline-1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
 
-**Manual install (no .bat):**
-1. Unzip `GungeonOnline.zip`.
-2. Open your game folder, the one with `EtG.exe`. Steam: right-click Enter the Gungeon, Manage, Browse local files. GOG Galaxy: the game, Manage installation, Show folder.
-3. Copy everything inside the zip's `files` folder into the game folder (the `BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`).
-4. Start the game. To uninstall, delete `BepInEx/plugins/GungeonOnline` (or the whole `BepInEx` folder and `winhttp.dll`).
+### Option A: the installer (easiest)
 
-Both players need the same version of the mod. The game tells you if they differ.
+1. Double-click **`Install Gungeon Online.bat`**.
+2. It finds Enter the Gungeon by itself (every Steam library, GOG, Epic) and installs the mod. If it can't find the game, it asks you to pick the folder with `EtG.exe`.
+3. Start the game. Done.
+
+If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**. That warning appears for any downloaded .bat file. If you'd rather not run it, use Option B; it does exactly the same thing.
+
+To remove the mod later, double-click **`Uninstall Gungeon Online.bat`**.
+
+### Option B: copy the files yourself
+
+1. Open your game folder, the one with `EtG.exe`:
+   - **Steam:** right-click Enter the Gungeon in your library, **Manage**, **Browse local files**.
+   - **GOG Galaxy:** the game, the settings icon, **Manage installation**, **Show folder**.
+   - **Epic:** usually `C:\Program Files\Epic Games\EnterTheGungeon`.
+2. Open the unzipped download and go into the **`files`** folder.
+3. Select everything in it (`BepInEx`, `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`) and copy it into the game folder. If Windows asks to replace files, say yes.
+4. Start the game. Done.
+
+To remove it, delete the `BepInEx\plugins\GungeonOnline` folder from the game folder. If you have no other BepInEx mods, you can also delete the `BepInEx` folder, `winhttp.dll`, `doorstop_config.ini` and `.doorstop_version`.
+
+### Check it worked
+
+Start the game and press pause: you should see **PLAY ONLINE** in the pause menu. If it's not there, see [Troubleshooting](#troubleshooting).
 
 ## Play
 
@@ -83,6 +99,14 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 
 - **4-player support is in active development** and it is the next thing coming. The netcode was built for 4 from day one; today the game side supports 2.
 - **Free for all co-op style:** fight in different rooms at the same time.
+
+## Troubleshooting
+
+- **No PLAY ONLINE in the pause menu:** the files went into the wrong folder. They must sit right next to `EtG.exe` (you should see `winhttp.dll` and the `BepInEx` folder beside it). Steam players: check you copied into the folder that **Browse local files** opened.
+- **The installer window closes or does nothing:** use Option B, it does the same thing.
+- **"Your friend has a different version":** both players need the same download. Get the latest from [Releases](../../releases).
+- **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
+- Anything else: [open an issue](../../issues) and attach the file from *Save report* (Settings, Help).
 
 ## FAQ
 

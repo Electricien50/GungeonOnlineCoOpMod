@@ -1,11 +1,27 @@
-ENTER THE GUNGEON ONLINE CO-OP MOD - how to play
+ENTER THE GUNGEON ONLINE CO-OP MOD 1.0 (beta)
 
-1. Both players: double-click "Install Gungeon Online.bat". It finds your game (Steam, GOG or Epic) by itself.
-2. Start Enter the Gungeon. Pause and pick "Play Online" (or hold Back + Start, or press F8).
-3. One player picks Host. The invite code is copied for you: send it to your friend.
-   On Steam you can also pick "Invite Steam friend".
-4. The other player copies the code, then picks Join. The code is read from the clipboard.
-5. Each player picks a character in the Breach, then the host walks into the Gungeon.
+INSTALL (close the game first, pick ONE way)
 
-If the connection drops, the run waits for you and you reconnect by yourself. Nothing is lost.
-If something looks wrong, open the menu and pick "Save report": a file appears on your Desktop.
+  Option A, the installer:
+    Double-click "Install Gungeon Online.bat". It finds your game by itself.
+    If Windows says "Windows protected your PC": More info, then Run anyway.
+
+  Option B, by hand:
+    Open your game folder (the one with EtG.exe).
+      Steam: right-click the game, Manage, Browse local files.
+      GOG Galaxy: the game, settings icon, Manage installation, Show folder.
+    Copy everything inside the "files" folder of this download into it.
+
+  Check: start the game and pause. You should see PLAY ONLINE.
+
+PLAY
+
+  1. Pause and pick PLAY ONLINE (or hold Back + Start, or press F8).
+  2. One player picks Host. The invite code is copied for you: send it.
+  3. The other player copies the code and picks Join.
+  4. Both pick a character in the Breach. The host walks into the Gungeon.
+
+  Both players need the same version of the mod.
+  If the connection drops, the run waits for you and you reconnect by yourself.
+  Problem? Settings, Help, Save report, then open an issue on GitHub:
+  https://github.com/Hero88go/EnterTheGungeonOnlineCoOpMod/issues
