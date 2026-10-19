@@ -567,7 +567,7 @@ namespace GungeonOnline.Session
         static readonly string[] SizeNames = { "Small", "Normal", "Large" };
 
         static readonly int[] LocatorOrder = { 5, 1, 0 };   // pickup tag (default), speech bubble, off
-        static readonly int[] TagOrder = { 0, 1, 6, 9 };     // off (default), above, below feet, above faint
+        static readonly int[] TagOrder = { 9, 1, 6, 0 };     // above faint (default), above, below feet, off
         static readonly string[] OpacityNames = { "100%", "75%", "50%" };
 
         static int NextLocator(int cur, int d) => Cycle(LocatorOrder, cur, d);

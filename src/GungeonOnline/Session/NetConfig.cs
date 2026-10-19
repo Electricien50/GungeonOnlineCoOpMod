@@ -62,7 +62,7 @@ namespace GungeonOnline.Session
                 if (parts.Length > 2 && int.TryParse(parts[2], out v)) LookTitle.Value = v;
                 if (parts.Length > 3 && int.TryParse(parts[3], out v)) LookToast.Value = v;
             }
-            NameTagStyle = c.Bind("Interface", "NameTagStyle", 0, new ConfigDescription("Your friend's username: 0 off, 1 above, 6 below feet, 9 above (faint).", new AcceptableValueRange<int>(0, 10)));
+            NameTagStyle = c.Bind("Interface", "NameTagStyle", 9, new ConfigDescription("Your friend's username: 0 off, 1 above, 6 below feet, 9 above (faint).", new AcceptableValueRange<int>(0, 10)));
             SmoothingMs = c.Bind("Network", "OtherPlayerSmoothingMs", -1, new ConfigDescription(
                 "Buffer for other players' input, in ms. -1 = Auto (sized from measured jitter, recommended). 0 = lowest latency, may stutter on a jittery link. Your own character is never delayed.",
                 new AcceptableValueRange<int>(-1, 100)));
