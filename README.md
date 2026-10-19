@@ -51,6 +51,33 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
   <br><sub>Split up and your camera stays yours. A small tag at the screen edge points to your friend.</sub>
 </p>
 
+<table>
+  <tr>
+    <td><img src="docs/media/pause-entry.png" alt="Play Online in the pause menu"></td>
+    <td><img src="docs/media/hosting.png" alt="Hosting with an invite code"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Play Online sits in the game's own pause menu.</sub></td>
+    <td align="center"><sub>Host and your invite code is copied for you.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/menu.png" alt="The online menu"></td>
+    <td><img src="docs/media/locator.png" alt="Friend locator, pickup tag"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Drawn with the game's own fonts and frames. Works with a controller.</sub></td>
+    <td align="center"><sub>The default locator: your friend's head and distance at the screen edge.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/boss.png" alt="Boss fight"></td>
+    <td><img src="docs/media/locator-bubble.png" alt="Friend locator"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Boss fights, bullets and all, on both screens.</sub></td>
+    <td align="center"><sub>Friend off screen? A small tag at the edge points the way.</sub></td>
+  </tr>
+</table>
+
 ## Install
 
 Download **`GungeonOnline-1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
@@ -113,33 +140,6 @@ My mods will always be free but donations are welcome! [ko-fi.com/hero88go](http
 - **Settings in plain words:** smoothing for your friend's character, correction speed, pause behaviour.
 - **Save report:** one button writes a report to your Desktop if anything looks off.
 - **One-click install:** the installer finds the game on Steam, GOG or Epic by itself.
-
-<table>
-  <tr>
-    <td><img src="docs/media/pause-entry.png" alt="Play Online in the pause menu"></td>
-    <td><img src="docs/media/hosting.png" alt="Hosting with an invite code"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Play Online sits in the game's own pause menu.</sub></td>
-    <td align="center"><sub>Host and your invite code is copied for you.</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/media/menu.png" alt="The online menu"></td>
-    <td><img src="docs/media/locator.png" alt="Friend locator, pickup tag"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Drawn with the game's own fonts and frames. Works with a controller.</sub></td>
-    <td align="center"><sub>The default locator: your friend's head and distance at the screen edge.</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/media/boss.png" alt="Boss fight"></td>
-    <td><img src="docs/media/locator-bubble.png" alt="Friend locator"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Boss fights, bullets and all, on both screens.</sub></td>
-    <td align="center"><sub>Friend off screen? A small tag at the edge points the way.</sub></td>
-  </tr>
-</table>
 
 ## How it plays differently from couch co-op
 
