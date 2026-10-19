@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/hero.png" alt="Enter The Gungeon Online Co-Op Mod in a boss fight" width="100%">
+  <img src="docs/media/hero.png" alt="Your friend next to you, with their username above them" width="100%">
 </p>
 
 <h1 align="center">Enter The Gungeon Online Co-Op Mod</h1>
@@ -46,16 +46,10 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 **4-player support is in active development**. The netcode was built for 4 from day one; today it's 2 because that's what Gungeon itself supports. A Free for all style (fight in different rooms at the same time) is coming too.
 
-<table>
-  <tr>
-    <td><img src="docs/media/host-view.png" alt="The host's screen"></td>
-    <td><img src="docs/media/friend-view.png" alt="The friend's screen"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>The host's screen...</sub></td>
-    <td align="center"><sub>...and the friend's screen, at the same moment. Each camera follows its own player.</sub></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/media/offscreen.png" alt="Your friend off screen: a small tag at the edge shows their head and distance" width="100%">
+  <br><sub>Split up and your camera stays yours. A small tag at the screen edge points to your friend.</sub>
+</p>
 
 ## Install
 

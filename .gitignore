@@ -11,3 +11,4 @@ tests/NetTests/obj/
 dist/
 .game-c/
 .game-d/
+*.stackdump
