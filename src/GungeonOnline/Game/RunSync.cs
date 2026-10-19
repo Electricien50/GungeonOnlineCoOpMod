@@ -96,10 +96,11 @@ namespace GungeonOnline.Game
 
         void Update()
         {
-            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (scene == lastScene) return;
-            if (!GameManager.HasInstance || GameManager.Instance.Dungeon == null || Dungeon.IsGenerating) return;
+            // Every floor is a new Dungeon object, but all floors load into the same scene, so key on the dungeon.
+            if (!GameManager.HasInstance || GameManager.Instance.Dungeon == null || Dungeon.IsGenerating || GameManager.Instance.IsLoadingLevel) return;
             if (GameManager.Instance.Dungeon.data == null || GameManager.Instance.Dungeon.data.rooms == null) return;
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "#" + GameManager.Instance.Dungeon.GetInstanceID();
+            if (scene == lastScene) return;
             lastScene = scene;
             LastFingerprint = Fingerprint();
             if (NetSession.Active && !NetSession.IsHost) Replication.WorldSync.Instance?.OnFloorLoaded();

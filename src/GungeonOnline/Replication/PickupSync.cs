@@ -368,6 +368,13 @@ namespace GungeonOnline.Replication
 
         void LateUpdate()
         {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("pickups", t0); }
+        }
+
+        void LateUpdateImpl()
+        {
             if (!NetSession.Active || !SceneObjects.OnDungeonFloor) return;
             if (Time.realtimeSinceStartup < nextScan) return;
             nextScan = Time.realtimeSinceStartup + 0.1f;

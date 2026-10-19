@@ -27,6 +27,9 @@ namespace GungeonOnline
             Input.InputPump.Install(harmony);
             Camera.IndependentCamera.Install(harmony);
             Game.RunSync.Install(harmony);
+            Game.PauseScope.Install(harmony);
+            Game.PresentationGate.Install(harmony);
+            Game.SecondFightLock.Install(harmony);
             Replication.WorldSync.Install(harmony);
             Replication.ProjectileSync.Install(harmony);
             Replication.VitalsSync.Install(harmony);
@@ -46,6 +49,7 @@ namespace GungeonOnline
             gameObject.AddComponent<Replication.PickupSync>();
             gameObject.AddComponent<Replication.InventorySync>();
             gameObject.AddComponent<Replication.ShopSync>();
+            gameObject.AddComponent<Replication.Checksum>();
             gameObject.AddComponent<Dev.DevRunner>();
             StartCoroutine(Dev.QuickStart.Run());
             Dev.AutoSession.Begin();

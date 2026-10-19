@@ -40,6 +40,13 @@ namespace GungeonOnline.Replication
 
         void LateUpdate()
         {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("inventory", t0); }
+        }
+
+        void LateUpdateImpl()
+        {
             if (!NetSession.Active || !NetSession.IsHost || GameManager.Instance.IsLoadingLevel) return;
             if (Time.realtimeSinceStartup < nextCheck) return;
             nextCheck = Time.realtimeSinceStartup + 0.25f;

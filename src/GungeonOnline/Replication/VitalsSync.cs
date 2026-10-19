@@ -45,6 +45,8 @@ namespace GungeonOnline.Replication
             NetSession.Instance.SessionEnded += () => { hurtSeq = 0; hurtApplied.Clear(); lastVitals.Clear(); };
         }
 
+        public void ForceResend() => lastVitals.Clear();
+
         /// <summary>A copy of another machine's player never takes damage from local hit checks.</summary>
         static bool DamagePrefix(HealthHaver __instance)
         {
@@ -128,6 +130,13 @@ namespace GungeonOnline.Replication
 
         /// <summary>Host: send vitals for every player whenever any of them changed.</summary>
         void LateUpdate()
+        {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("vitals", t0); }
+        }
+
+        void LateUpdateImpl()
         {
             if (!IsHostSession || GameManager.Instance.IsLoadingLevel) return;
             var list = new List<KeyValuePair<int, PlayerController>>();

@@ -87,6 +87,13 @@ namespace GungeonOnline.Replication
 
         void LateUpdate()
         {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("shops", t0); }
+        }
+
+        void LateUpdateImpl()
+        {
             if (!NetSession.Active || !NetSession.IsHost || !SceneObjects.OnDungeonFloor) return;
             if (Time.realtimeSinceStartup < nextScan) return;
             nextScan = Time.realtimeSinceStartup + 0.25f;

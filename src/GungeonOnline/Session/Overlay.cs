@@ -20,6 +20,11 @@ namespace GungeonOnline.Session
         {
             var s = NetSession.Instance;
             if (s == null) return;
+            if (NetSession.Active && GameManager.HasInstance && GameManager.Instance.IsPaused && !NetConfig.PauseFreezesEveryone.Value)
+            {
+                var style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperCenter, fontSize = Mathf.Max(14, Screen.height / 40) };
+                GUI.Label(new Rect(0, Screen.height * 0.06f, Screen.width, 40), "Online: the game keeps running while you are paused", style);
+            }
             if (!open)
             {
                 if (NetSession.Active) GUI.Label(new Rect(8, Screen.height - 24, 600, 22), StatusLine(s));
@@ -94,6 +99,9 @@ namespace GungeonOnline.Session
                     NetConfig.SmoothingMs.Value = (int)NetConfig.SmoothingMs.DefaultValue;
                     NetConfig.CorrectionSpeed.Value = (float)NetConfig.CorrectionSpeed.DefaultValue;
                 }
+                var ck = Replication.Checksum.Instance;
+                if (ck != null && !NetSession.IsHost)
+                    GUILayout.Label($"Sync checks: {ck.Checks}  desyncs found and repaired: {ck.Mismatches}" + (ck.Mismatches > 0 ? "  (last: " + ck.LastMismatch + ")" : ""));
                 if (GUILayout.Button("Leave session")) s.Leave("left");
             }
             GUI.DragWindow();

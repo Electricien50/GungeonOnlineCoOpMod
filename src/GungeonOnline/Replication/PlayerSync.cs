@@ -61,6 +61,13 @@ namespace GungeonOnline.Replication
         /// <summary>End of frame: record positions (all machines), send snapshot (host).</summary>
         void LateUpdate()
         {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("players", t0); }
+        }
+
+        void LateUpdateImpl()
+        {
             if (!NetSession.Active) return;
             Camera.IndependentCamera.Apply();
             ApplyPendingCorrections();

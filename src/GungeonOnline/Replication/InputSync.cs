@@ -129,7 +129,8 @@ namespace GungeonOnline.Replication
             var local = PlayerSlots.Local;
             var bi = BraveInput.GetInstanceForPlayer(0);
             if (local == null || bi == null) return;
-            var f = InputPump.Sample(bi.ActiveActions);
+            // While your pause menu is open the stick drives the menu, not your character.
+            var f = Game.PauseScope.LocalMenuOpen ? default(InputFrame) : InputPump.Sample(bi.ActiveActions);
             LocalSeq++;
             localHistory[LocalSeq & 255] = f;
             localTimeMs[LocalSeq & 255] = NowMs;

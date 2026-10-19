@@ -49,6 +49,23 @@ namespace GungeonOnline.Dev
             }
         }
 
+        float floorSince = -1f;
+        string floorScene;
+
+        /// <summary>Harness host (GO_FLOOR_EVERY=seconds): move on to the next floor on a timer, re-run the fight setup on each.</summary>
+        void HostFloorCycle(float t)
+        {
+            var v = System.Environment.GetEnvironmentVariable("GO_FLOOR_EVERY");
+            if (v == null || !Session.NetSession.IsHost || Foyer.Instance != null || GameManager.Instance.IsLoadingLevel) return;
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + GameManager.Instance.CurrentFloor;
+            if (scene != floorScene) { floorScene = scene; floorSince = t; fightDone = false; fightAt = -1f; return; }
+            if (!float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var every)) return;
+            if (t - floorSince < every) return;
+            floorSince = t + 1000f;
+            Plugin.Log.LogInfo($"Harness: next floor (was floor {GameManager.Instance.CurrentFloor})");
+            GameManager.Instance.DelayedLoadNextLevel(0.5f);
+        }
+
         float buyAt = -1f;
         bool bought;
 
@@ -148,6 +165,7 @@ namespace GungeonOnline.Dev
         void Update()
         {
             if (!DevEnv.IsHarness) return;
+            NetProfiler.Frame();
             float t = Time.realtimeSinceStartup;
             Mute();
             if (Application.targetFrameRate != DevEnv.Fps || QualitySettings.vSyncCount != 0) { QualitySettings.vSyncCount = 0; Application.targetFrameRate = DevEnv.Fps; }
@@ -186,11 +204,13 @@ namespace GungeonOnline.Dev
                     var lb = BraveInput.GetInstanceForPlayer(0);
                     if (lb != null && lb.ActiveActions != null) net += $" localMove={lb.ActiveActions.Move.Vector} localSeq={Replication.InputSync.Instance.LocalSeq}";
                     var ws = Replication.WorldSync.Instance;
-                    if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} enemies={StaticReferenceManager.AllEnemies.Count}]";
+                    if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} localSuppressed={ws.LocalActorsSuppressed} spawnFail={ws.SpawnFailures} enemies={StaticReferenceManager.AllEnemies.Count}]";
                     var ps = Replication.ProjectileSync.Instance;
                     if (ps != null) net += $" proj[announced={ps.Announced} updates={ps.Updates} copies={ps.Copies} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
                     var pk = Replication.PickupSync.Instance;
                     if (pk != null) net += $" pick[ann={pk.PickupsAnnounced} copies={pk.PickupsCopied} purged={pk.LocalPurged} req={pk.Requests} gives={pk.Gives} givesApplied={pk.GivesApplied} chests={pk.ChestsMapped} chestOpened={pk.ChestsOpened}]";
+                    var ck = Replication.Checksum.Instance;
+                    if (ck != null) net += $" check[summaries={ck.Summaries} checks={ck.Checks} mismatches={ck.Mismatches} resyncs={ck.Resyncs} clean={ck.ConsecutiveClean}]";
                     var sh = Replication.ShopSync.Instance;
                     if (sh != null) net += $" shop[ann={sh.Announced} mapped={sh.Mapped} restocked={sh.Restocked} req={sh.Requests}]";
                     var inv = Replication.InventorySync.Instance;
@@ -204,7 +224,7 @@ namespace GungeonOnline.Dev
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
                 string fp = Game.RunSync.Instance != null ? Game.RunSync.Instance.LastFingerprint : "-";
-                string line = $"t={t:F1} frame={Time.frameCount} scene={scene} floor=[{fp}] gm={gm != null} players={players} p0={pos} net={net}";
+                string line = $"t={t:F1} frame={Time.frameCount} fps={1f / Mathf.Max(0.0001f, Time.smoothDeltaTime):F0} {NetProfiler.Summary()} scene={scene} floor=[{fp}] gm={gm != null} players={players} p0={pos} net={net}";
                 try { File.WriteAllText(DevEnv.StatusFile, line); } catch { }
                 if (Session.NetSession.Active && gm != null && gm.PrimaryPlayer != null)
                 {
@@ -226,6 +246,7 @@ namespace GungeonOnline.Dev
                     Foyer.Instance.OnDepartedFoyer();
                 }
             }
+            HostFloorCycle(t);
             HostFightSetup(t);
             ClientTestBuy(t);
             TimedShots(t);

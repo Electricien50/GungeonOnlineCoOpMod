@@ -120,6 +120,13 @@ namespace GungeonOnline.Replication
         /// <summary>Host: send a correction for bullets whose path left the straight line the client predicts.</summary>
         void LateUpdate()
         {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("bullets", t0); }
+        }
+
+        void LateUpdateImpl()
+        {
             if (!IsHostSession || hostTracked.Count == 0) return;
             float now = Time.time;
             var dead = new List<uint>();

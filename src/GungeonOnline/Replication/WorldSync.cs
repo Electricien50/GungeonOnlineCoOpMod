@@ -51,7 +51,7 @@ namespace GungeonOnline.Replication
         public int TrackedCount => lastSent.Count;
         public int ReadyPeers => ready.Count;
         public bool IsReady(Connection c) => ready.Contains(c);
-        public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied;
+        public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied, LocalActorsSuppressed, SpawnFailures;
 
         readonly WireWriter w = new WireWriter(2048);
 
@@ -66,6 +66,10 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(AIActor), nameof(AIActor.ForceDeath)), prefix: new HarmonyMethod(t, nameof(DeathPrefix)));
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.ApplyDamage)), prefix: new HarmonyMethod(t, nameof(DamagePrefix)), postfix: new HarmonyMethod(t, nameof(DamagePostfix)));
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.Die)), prefix: new HarmonyMethod(t, nameof(DiePrefix)));
+            // Client: enemies that appear on their own (split-on-death, summons) are the host's to spawn.
+            h.Patch(AccessTools.Method(typeof(AIActor), "Start"), prefix: new HarmonyMethod(t, nameof(ActorStartPrefix)));
+            // Boss death: the host kills the remaining enemies and their deaths replicate; the client must not do it itself.
+            h.Patch(AccessTools.Method(typeof(BossKillCam), "KillAllEnemies"), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
         }
 
         void Awake() { Instance = this; }
@@ -97,6 +101,16 @@ namespace GungeonOnline.Replication
         }
 
         static bool SealPrefix() => !IsClient || ApplyingHost;
+
+        static bool ActorStartPrefix(AIActor __instance)
+        {
+            if (!IsClient || ApplyingHost || Instance == null || !Instance.FloorReady) return true;
+            if (__instance.GetComponent<PlayerController>() != null || __instance.CompanionOwner != null || __instance.GetComponent<CompanionController>() != null) return true;
+            if (NetIds.Has(__instance)) return true;
+            Instance.LocalActorsSuppressed++;
+            __instance.EraseFromExistence(true);
+            return false;
+        }
 
         static void SealPostfix(RoomHandler __instance) { if (IsHostSession) Instance.SendRoomSeal(__instance, true); }
         static void UnsealPostfix(RoomHandler __instance) { if (IsHostSession) Instance.SendRoomSeal(__instance, false); }
@@ -255,6 +269,35 @@ namespace GungeonOnline.Replication
             return (int)(h & 0xFFFF);
         }
 
+        /// <summary>Host: send every live actor and sealed room again (repair after a detected desync).</summary>
+        public void ResendWorld(Connection c)
+        {
+            foreach (var kv in NetIds.All)
+                if (kv.Value is AIActor a && a && a.healthHaver && !a.healthHaver.IsDead)
+                    c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
+            foreach (var room in GameManager.Instance.Dungeon.data.rooms)
+            {
+                w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(room.IsSealed);
+                c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
+            }
+        }
+
+        /// <summary>Client: remove replicas the host no longer has.</summary>
+        public void KeepOnly(List<uint> alive)
+        {
+            var keep = new HashSet<uint>(alive);
+            foreach (var id in new List<uint>(replicas.Keys))
+            {
+                if (keep.Contains(id)) continue;
+                var rep = replicas[id];
+                ApplyingHost = true;
+                try { if (rep.Actor) rep.Actor.EraseFromExistence(true); }
+                finally { ApplyingHost = false; }
+                replicas.Remove(id);
+                NetIds.Forget(id);
+            }
+        }
+
         // ---------------- Client ----------------
 
         /// <summary>Client: called by RunSync once a floor finished generating.</summary>
@@ -282,6 +325,7 @@ namespace GungeonOnline.Replication
         public void OnFloorUnloading()
         {
             FloorReady = false;
+            Game.SecondFightLock.Reset();
             PickupSync.Instance?.OnFloorChanged();
             ShopSync.Instance?.OnFloorChanged();
             replicas.Clear();
@@ -291,6 +335,14 @@ namespace GungeonOnline.Replication
         void OnEvent(Connection c, byte[] data, Delivery d)
         {
             if (data.Length == 0) return;
+            if (data[0] >= 70 && data[0] < 80)
+            {
+                if (!NetSession.IsHost && !FloorReady) return; // summaries before the floor is ready are meaningless
+                var cr = new WireReader(data, 1, data.Length - 1);
+                try { Checksum.Instance?.Apply(c, data[0], ref cr); }
+                catch (System.Exception e) { Plugin.Log.LogError("Checksum: " + e); }
+                return;
+            }
             if (data[0] >= 60 && data[0] < 70)
             {
                 if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
@@ -369,6 +421,8 @@ namespace GungeonOnline.Replication
                                 rep.Actor.healthHaver.Die(dir);
                                 DeathsApplied++;
                             }
+                            else
+                                Plugin.Log.LogWarning($"WorldSync: death for {id} not applied (known={replicas.ContainsKey(id)} alive={(replicas.TryGetValue(id, out var rr) && rr.Actor && rr.Actor.healthHaver && !rr.Actor.healthHaver.IsDead)})");
                             replicas.Remove(id);
                             break;
                         }
@@ -406,10 +460,10 @@ namespace GungeonOnline.Replication
             var room = RoomAt(r.I16()) ?? pos.GetAbsoluteRoom();
             if (replicas.ContainsKey(id)) return;
             var prefab = EnemyDatabase.GetOrLoadByGuid(guid);
-            if (prefab == null) { Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
+            if (prefab == null) { SpawnFailures++; Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
             ProjectileSync.LearnBank(prefab);
             var a = AIActor.Spawn(prefab, pos, room, false, AIActor.AwakenAnimationType.Default, false);
-            if (a == null) return;
+            if (a == null) { SpawnFailures++; Plugin.Log.LogWarning($"WorldSync: spawn of {id} ({guid}) failed"); return; }
             MakeReplica(a);
             NetIds.Bind(id, a);
             replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup };
@@ -477,6 +531,13 @@ namespace GungeonOnline.Replication
         }
 
         void LateUpdate()
+        {
+            long t0 = Dev.NetProfiler.Begin();
+            try { LateUpdateImpl(); }
+            finally { Dev.NetProfiler.End("world", t0); }
+        }
+
+        void LateUpdateImpl()
         {
             if (!NetSession.Active) return;
             if (NetSession.IsHost) HostLateUpdate();
