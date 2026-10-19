@@ -289,6 +289,14 @@ namespace GungeonOnline.Session
                     return;
                 }
                 // Client: never give up on its own. Keep everything and keep trying to get back.
+                if (!node.IsHost && why != null && why.Contains("saved the run"))
+                {
+                    // The host stopped for now: back to the Breach. The run continues when they pick Resume saved run.
+                    Toasts.Show("The host saved the run for later. You'll rejoin it when they resume.", 7f);
+                    Leave("left");
+                    if (GameManager.HasInstance && !Game.SceneObjects.InBreach) GameManager.Instance.DelayedReturnToFoyer(1f);
+                    return;
+                }
                 bool hostQuit = why == "session closed" || why == "game closed";
                 if (!leaving && node.LastHost != null && why != "left")
                 {

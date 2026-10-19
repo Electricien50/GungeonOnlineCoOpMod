@@ -231,6 +231,15 @@ namespace GungeonOnline.Session
                             () => Game.AwayGuard.Instance.ContinueAlone = !Game.AwayGuard.Instance.ContinueAlone);
                     Add("Settings", () => Go(Screen.Settings));
                     if (NetSession.IsHost && s.InviteCodeText != null) Add("Show invite code", () => Go(Screen.Host));
+                    // Stop for the night: the run is saved and can be resumed any time later from this menu.
+                    if (NetSession.IsHost && InRun) Add("Save run and quit", () =>
+                    {
+                        RunBackup.SaveNow("saved for later");
+                        Toasts.Show("Run saved. Pick Resume saved run next time.", 5f);
+                        Close();
+                        s.Leave("the host saved the run for later");
+                        GameManager.Instance.DelayedReturnToFoyer(1f);
+                    });
                     Add("Leave", () => { if (InRun) Go(Screen.ConfirmLeave); else { s.Leave("left"); Go(Screen.Home); } });
                     Add("Close", Close);
                     break;

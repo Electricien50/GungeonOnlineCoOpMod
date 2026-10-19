@@ -23,11 +23,11 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 **Your own camera.** Each player plays on their own PC with their own screen, controller and HUD. Boss intros and kill cams still play for both of you.
 
+**Choose any character.** Pilot, Convict, Marine, Hunter, Robot, Bullet, anyone you've unlocked. Both players can even pick the same one. No more forced Cultist.
+
 **Play it your way: two co-op styles** (the host picks in Settings):
 - *Classic* (default): vanilla rules. When one of you starts a fight, the other is pulled into the room, just like local co-op. You always fight together, but each of you keeps your own camera.
 - *Explore*: split up as much as you like. Only one room can be in a fight at a time, so nobody starts a second fight alone, and nobody gets teleported.
-
-**Choose any character.** Pilot, Convict, Marine, Hunter, Robot, Bullet, anyone you've unlocked. Both players can even pick the same one. No more forced Cultist.
 
 **Built so it can't desync.** This was the thing I cared about most. A lot of online mods feel great for twenty minutes, then the two games quietly drift apart and you're shooting enemies your friend can't see. Enter The Gungeon Online Co-Op Mod is designed so that can't happen. The host runs the one real game and your PC follows it. Every second both games compare enemies, rooms, chests, health, money and inventories, and any difference is fixed on the spot. Your own character still reacts on the frame you press, with nothing waiting on the network.
 
@@ -35,6 +35,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 - Short Wi-Fi hiccup: play just carries on.
 - Someone drops for longer or their game crashes: the run pauses and waits for them, with no time limit. They reconnect and get their character, guns, items, health and spot back.
 - The host crashes: the run is backed up every floor and every two minutes. The host restarts, picks *Resume saved run*, and you're back in.
+- Need to stop? The host picks *Save run and quit*. Come back tomorrow or two weeks later, pick *Resume saved run*, and your friend rejoins with their own character and items.
 - Quick restart is turned off online, so nobody can throw the run away by accident.
 
 **Two ways to join.**
@@ -43,7 +44,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 **Easy to set up.** Steam, GOG and Epic copies all play together. A one-click installer finds your game. Pick *Play Online* from the pause menu (or hold Back + Start). It works with a controller.
 
-**4-player support is in active development** and it's the next thing coming. The netcode was built for 4 from day one; today it's 2 because that's what Gungeon itself supports. A Free for all style (fight in different rooms at the same time) is coming too.
+**4-player support is in active development**. The netcode was built for 4 from day one; today it's 2 because that's what Gungeon itself supports. A Free for all style (fight in different rooms at the same time) is coming too.
 
 <table>
   <tr>
@@ -97,7 +98,7 @@ If the join doesn't go through, your friend sends you their *reply code* and you
 
 ## Roadmap
 
-- **4-player support is in active development** and it is the next thing coming. The netcode was built for 4 from day one; today the game side supports 2.
+- **4-player support is in active development**. The netcode was built for 4 from day one; today the game side supports 2.
 - **Free for all co-op style:** fight in different rooms at the same time.
 
 ## Troubleshooting
@@ -185,7 +186,7 @@ Enter The Gungeon Online Co-Op Mod is original work. **It contains no code from 
 
 ## Status
 
-Version 1.0 beta. Every automated check in [VALIDATION.md](VALIDATION.md) passes. Those checks run two hidden game instances on one PC, with a simulated 70 ms connection, 240 fps and 200 fps, through fights, bosses, shops, deaths, floor changes, dropped connections, crashes and 30 minute sessions. What automation can't cover yet is real routers, Steam invites and human hands on controllers: that's what the first public sessions are for. **Found a bug? Please [open an issue](../../issues)** and attach the file from *Save report* (Settings, Help) if you can. Every report helps.
+Version 1.0 beta. **Found a bug? Please [open an issue](../../issues)** and attach the file from *Save report* (Settings, Help) if you can. Every report helps.
 
 ## Settings
 
