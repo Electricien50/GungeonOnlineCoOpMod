@@ -22,7 +22,7 @@ namespace GungeonOnline.Net
     {
         public const int MaxDatagram = 1200;
         const int FragmentPayload = 1000;
-        const int HeaderSize = 2 + 1 + 2 + 2 + 8 + 2; // magic, type, seq, ack, ackBits, cumulative reliable ack
+        const int HeaderSize = 2 + 1 + 4 + 2 + 2 + 8 + 2; // magic, type, session, seq, ack, ackBits, cumulative reliable ack
         /// <summary>Datagram budget per flush per peer (about 9 KB per frame, 570 KB/s at 60 Hz).</summary>
         public int MaxPacketsPerFlush = 8;
 
@@ -86,6 +86,10 @@ namespace GungeonOnline.Net
         ushort lastRelAck;
         double relAckSince;
         public int StallResends;
+        /// <summary>The handshake's random number, stamped on every data packet. Packets from an earlier session at
+        /// the same address (a crashed game's last packets still in flight) carry another number and are dropped.</summary>
+        public uint Session;
+        public int StalePackets;
         readonly Dictionary<ushort, KeyValuePair<byte, byte[]>> outOfOrder = new Dictionary<ushort, KeyValuePair<byte, byte[]>>();
         readonly List<byte> fragAssembly = new List<byte>();
         byte fragChannel;
@@ -131,7 +135,7 @@ namespace GungeonOnline.Net
         }
 
         public int PendingReliable => pending.Count;
-        public string RelStats => $"pending={pending.Count} next={nextExpected} held={outOfOrder.Count} stall={StallResends}";
+        public string RelStats => $"pending={pending.Count} next={nextExpected} held={outOfOrder.Count} stall={StallResends} stale={StalePackets}";
 
         /// <summary>
         /// Build the datagrams to send now. Always emits at least one packet when <paramref name="forceAck"/>
@@ -197,6 +201,7 @@ namespace GungeonOnline.Net
             w.Reset();
             w.U16(Packet.Magic);
             w.U8((byte)PacketType.Data);
+            w.U32(Session);
             w.U16(seq);
             w.U16(remoteSeq);
             w.U64(remoteAckBits);
@@ -208,6 +213,7 @@ namespace GungeonOnline.Net
         {
             var r = new WireReader(buf, offset, count);
             if (r.U16() != Packet.Magic || r.U8() != (byte)PacketType.Data) return;
+            if (r.U32() != Session) { StalePackets++; return; }
             ushort seq = r.U16();
             ushort ack = r.U16();
             ulong ackBits = r.U64();

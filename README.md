@@ -81,7 +81,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-Download the latest **`GungeonOnline-1.0.1.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
+Download the latest **`GungeonOnline-1.0.2.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
 
 ### Option A: the installer (easiest)
 
@@ -132,6 +132,7 @@ My mods will always be free but donations are welcome on kofi! [ko-fi.com/hero88
 ## Features
 
 - **Any character for both players**, duplicates allowed. Pick in your own Breach.
+- **Couch co-op with any character:** on one PC, player two no longer has to be the Cultist. Player two joins at the Cultist as usual, then talks to any Gungeoneer in the Breach to become them, just like player one does.
 - **Cross-store:** Steam, GOG and Epic copies play together (the game code is identical on all three).
 - **Controller-first menu:** pick *Play Online* in the game's own pause menu, or hold **Back + Start**, or press **F8**.
 - **Invite codes copied for you.** Host, send the code, your friend joins from their clipboard. Steam players can also invite from the friends list.
@@ -187,7 +188,7 @@ Your normal save is used and gets credit for runs you play online. Run backups g
 
 ## Status
 
-Version 1.0.1 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
+Version 1.0.2 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
 
 ## Settings
 

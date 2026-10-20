@@ -37,6 +37,7 @@ namespace GungeonOnline.Replication
         public static void Install(Harmony h)
         {
             h.Patch(AccessTools.Method(typeof(PlayerController), "Die"), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(DiedPostfix)));
+            h.Patch(AccessTools.PropertyGetter(typeof(PlayerController), nameof(PlayerController.IsInMinecart)), prefix: new HarmonyMethod(typeof(VitalsSync), nameof(InMinecartPrefix)));
             h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.ResurrectFromChest)), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(RevivedPostfix)));
             h.Patch(AccessTools.Method(typeof(PlayerController), "Fall"),
                 prefix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPrefix)),
@@ -136,6 +137,20 @@ namespace GungeonOnline.Replication
         uint LastAck;
         /// <summary>Guest: hits on our own player the host has not confirmed yet.</summary>
         public bool HurtsInFlight => hurtSeq > LastAck;
+
+        /// <summary>
+        /// A co-op pit respawn waits until the other player is out of their minecart (on a shared screen that is a
+        /// moment). Online the friend may ride a long track somewhere else, and you would hang mid-fall the whole
+        /// time. While your own player is falling, the friend's copy reads as not in a cart: you come back at the edge.
+        /// </summary>
+        static bool InMinecartPrefix(PlayerController __instance, ref bool __result)
+        {
+            if (!NetSession.Active || !PlayerSlots.IsRemote(__instance)) return true;
+            var me = PlayerSlots.Local;
+            if (me == null || !me.IsFalling) return true;
+            __result = false;
+            return false;
+        }
 
         static void DiedPostfix(PlayerController __instance)
         {

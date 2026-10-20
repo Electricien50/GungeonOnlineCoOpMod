@@ -46,6 +46,29 @@ namespace GungeonOnline.Game
 
         public static bool IsRemote(PlayerController p) => p != null && p != Local && SlotOf(p) >= 0;
 
+        static System.Collections.IEnumerator DespawnAfterLoad(int slot, PlayerController p)
+        {
+            while (GameManager.HasInstance && GameManager.Instance.IsLoadingLevel) yield return null;
+            yield return null;
+            // Still the same character in that slot (nobody took it back in the meantime): remove it now.
+            if (remotes.TryGetValue(slot, out var now) && now == p) Despawn(slot);
+        }
+
+        /// <summary>Player two as <paramref name="prefab"/> at <paramref name="at"/>, set up the way the game's own co-op join does it.
+        /// Used by online play and by couch co-op.</summary>
+        public static PlayerController CreateSecondary(GameObject prefab, Vector3 at)
+        {
+            var gm = GameManager.Instance;
+            gm.ClearSecondaryPlayer();
+            GameManager.LastUsedCoopPlayerPrefab = prefab;
+            var go = Object.Instantiate(prefab, at, Quaternion.identity);
+            go.SetActive(true);
+            var p = go.GetComponent<PlayerController>();
+            p.PlayerIDX = 1;
+            gm.SecondaryPlayer = p;
+            return p;
+        }
+
         /// <summary>Spawn (or re-spawn with a new character) the remote player for <paramref name="slot"/>.</summary>
         public static PlayerController SpawnRemote(int slot, string prefabPath)
         {
@@ -62,13 +85,7 @@ namespace GungeonOnline.Game
 
             gm.CurrentGameType = GameManager.GameType.COOP_2_PLAYER;
             local.ReinitializeMovementRestrictors();
-            gm.ClearSecondaryPlayer();
-            GameManager.LastUsedCoopPlayerPrefab = prefab;
-            var go = Object.Instantiate(prefab, local.transform.position + new Vector3(1.5f, 0f, 0f), Quaternion.identity);
-            go.SetActive(true);
-            var p = go.GetComponent<PlayerController>();
-            p.PlayerIDX = 1;
-            gm.SecondaryPlayer = p;
+            var p = CreateSecondary(prefab, local.transform.position + new Vector3(1.5f, 0f, 0f));
             remotes[slot] = p;
             remoteChoice[slot] = prefabPath;
             Plugin.Instance.StartCoroutine(FinishSpawn(p));
@@ -94,6 +111,12 @@ namespace GungeonOnline.Game
         public static void Despawn(int slot)
         {
             if (!remotes.TryGetValue(slot, out var p)) return;
+            // Never in the middle of a floor load: the game's load code still uses every player.
+            if (GameManager.HasInstance && GameManager.Instance.IsLoadingLevel && Plugin.Instance != null)
+            {
+                Plugin.Instance.StartCoroutine(DespawnAfterLoad(slot, p));
+                return;
+            }
             remotes.Remove(slot);
             remoteChoice.Remove(slot);
             Input.InputPump.Unroute(p ? p.PlayerIDX : 1);

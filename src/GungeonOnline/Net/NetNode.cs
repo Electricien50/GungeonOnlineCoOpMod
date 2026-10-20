@@ -7,7 +7,7 @@ namespace GungeonOnline.Net
     /// <summary>What a joining peer presents. Host rejects on any mismatch.</summary>
     public sealed class Handshake
     {
-        public const ushort ProtocolVersion = 2;
+        public const ushort ProtocolVersion = 3;
         public string ModVersion = "";
         public string GameHash = "";
         public string PlayerName = "";
@@ -136,7 +136,7 @@ namespace GungeonOnline.Net
                         LocalSlot = r.U8();
                         r.U8(); // host max players
                         Connecting = false;
-                        var c = new Connection(from, 0) { LastReceiveTime = now };
+                        var c = new Connection(from, 0) { LastReceiveTime = now, Session = nonce };
                         Connections.Add(c);
                         Connected?.Invoke(c);
                     }
@@ -189,7 +189,7 @@ namespace GungeonOnline.Net
                 Socket.SendTo(from, w.Buffer, w.Length);
                 return;
             }
-            var c = new Connection(from, slot) { LastReceiveTime = now, Tag = name, PlayerId = pid };
+            var c = new Connection(from, slot) { LastReceiveTime = now, Tag = name, PlayerId = pid, Session = n };
             Connections.Add(c);
             acceptedNonces[Key(from)] = n;
             SendAccept(from, n, slot);

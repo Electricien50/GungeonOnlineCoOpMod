@@ -366,6 +366,69 @@ namespace GungeonOnline.Dev
         }
 
         bool forcedBlack, reportSent;
+        int couchStep; float couchAt;
+        /// <summary>Harness (GO_COUCH_TEST=prefab, no session): couch co-op player two joins at the Cultist, then talks
+        /// to that Gungeoneer's statue and must become them (player one stays), then the run starts.</summary>
+        void CouchTest()
+        {
+            var want = System.Environment.GetEnvironmentVariable("GO_COUCH_TEST");
+            if (want == null || couchStep >= 4) return;
+            var gm = GameManager.Instance;
+            float now = Time.realtimeSinceStartup;
+            if (couchStep == 0)
+            {
+                if (!Game.SceneObjects.InBreach || gm.PrimaryPlayer == null) return;
+                if (couchAt == 0) { couchAt = now + 5f; return; }
+                if (now < couchAt) return;
+                couchStep = 4;
+                foreach (var fsm in Object.FindObjectsOfType<PlayMakerFSM>())
+                    foreach (var st in fsm.FsmStates)
+                        foreach (var act in st.Actions)
+                            if (act is HutongGames.PlayMaker.Actions.ChangeCoopMode cm && cm.TargetCoopMode && !cm.IsTestCoopValid && couchStep == 4)
+                            {
+                                fsm.Fsm.SetState(st.Name);
+                                couchStep = 1; couchAt = now + 6f;
+                            }
+                if (couchStep == 4) Plugin.Log.LogWarning("Harness: no co-op join conversation found");
+                return;
+            }
+            if (now < couchAt) return;
+            string p1 = gm.PrimaryPlayer ? gm.PrimaryPlayer.gameObject.name : "none";
+            string p2 = gm.SecondaryPlayer ? gm.SecondaryPlayer.gameObject.name : "none";
+            if (couchStep == 1)
+            {
+                int shown = 0; foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>()) if (!f.IsCoopCharacter) shown++;
+                Plugin.Log.LogInfo($"Harness: couch joined, p1={p1} p2={p2} statues out={shown}");
+                couchStep = 4;
+                foreach (var fsm in Object.FindObjectsOfType<PlayMakerFSM>())
+                    foreach (var st in fsm.FsmStates)
+                        foreach (var act in st.Actions)
+                            if (act is HutongGames.PlayMaker.Actions.ChangeToNewCharacter ch && ch.PlayerPrefabPath != null && ch.PlayerPrefabPath.EndsWith(want) && couchStep == 4)
+                            {
+                                var talk = fsm.GetComponent<TalkDoerLite>();
+                                if (talk) talk.CompletedTalkingPlayer = System.Environment.GetEnvironmentVariable("GO_COUCH_TALKER") == "1" ? gm.PrimaryPlayer : gm.SecondaryPlayer; // what the end of a real conversation leaves
+                                Plugin.Log.LogInfo("Harness: player two talks to " + fsm.gameObject.name);
+                                fsm.Fsm.SetState(st.Name);
+                                couchStep = 2; couchAt = now + 6f;
+                            }
+                if (couchStep == 4) Plugin.Log.LogWarning("Harness: no statue for " + want);
+            }
+            else if (couchStep == 2)
+            {
+                int shown = 0; foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>()) if (!f.IsCoopCharacter) shown++;
+                Plugin.Log.LogInfo($"Harness: after the statue, p1={p1} p2={p2} statues out={shown} players={gm.AllPlayers.Length}");
+                Pixelator.Instance.FadeToBlack(0.5f);
+                gm.DelayedLoadNextLevel(0.75f);
+                Game.SceneObjects.Breach.OnDepartedFoyer();
+                couchStep = 3; couchAt = now + 25f;
+            }
+            else if (couchStep == 3)
+            {
+                Plugin.Log.LogInfo($"Harness: couch on the floor p1={p1} p2={p2} type={gm.CurrentGameType} players={gm.AllPlayers.Length}");
+                couchStep = 4;
+            }
+        }
+
         /// <summary>Harness (GO_FORCE_BLACK=second): leave this screen faded to black like a lost fade-in.</summary>
         void ForceBlack(float t)
         {
@@ -684,6 +747,7 @@ namespace GungeonOnline.Dev
             ClientLowHp();
             HostDiesAfterGuest();
             ForceBlack(Time.realtimeSinceStartup);
+            CouchTest();
             var rep = System.Environment.GetEnvironmentVariable("GO_SEND_REPORT_AT");
             if (!reportSent && rep != null && Time.realtimeSinceStartup > float.Parse(rep, System.Globalization.CultureInfo.InvariantCulture)) { reportSent = true; Session.Reports.Save(); }
             ClientTestBuy(t);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+**New**
+- Couch co-op with any character: on one PC, player two joins at the Cultist as usual, then talks to any Gungeoneer in the Breach to become them, just like player one. The Gungeoneers stay out in the Breach during couch co-op instead of disappearing.
+
+**Fixes**
+- If the guest's game crashed while the host was loading the next floor, the host could get stuck on the loading screen.
+- After a crash, the friend who came back could stay frozen: leftover network traffic from the crashed game was mixed into the new connection. Every packet now carries its session, and old ones are ignored.
+- Falling into a pit while your friend rides a minecart no longer leaves you hanging mid-fall until they get off.
+
 ## 1.0.1
 
 **Fixes**

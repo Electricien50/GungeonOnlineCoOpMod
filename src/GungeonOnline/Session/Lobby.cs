@@ -39,6 +39,8 @@ namespace GungeonOnline.Session
                 if (!NetSession.IsHost) return;
                 // During a run a player who drops stays in the game (their character waits for them).
                 if (!Game.SceneObjects.InBreach && GameManager.HasInstance && GameManager.Instance.Dungeon != null) return;
+                // Also while a floor is loading (no Dungeon yet): removing a character mid-load breaks the load.
+                if (GameManager.HasInstance && GameManager.Instance.IsLoadingLevel) return;
                 Roster.Remove(c.Slot);
                 PlayerSlots.Despawn(c.Slot);
                 SendRoster();

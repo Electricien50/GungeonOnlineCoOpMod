@@ -20,6 +20,38 @@ namespace GungeonOnline.Game
         static readonly System.Reflection.FieldInfo DisableField = AccessTools.Field(typeof(PlayerController), "m_disableInput");
         float nextCheck;
         float blackSince = -1f;
+
+        static void HardFallRescue(PlayerController p)
+        {
+            try
+            {
+                p.StopAllCoroutines(); // the stuck respawn
+                AccessTools.Field(typeof(PlayerController), "m_isFalling").SetValue(p, false);
+                Vector2 at = p.transform.position;
+                var room = p.CurrentRoom;
+                if (room != null)
+                {
+                    var cell = room.GetNearestAvailableCell(at, new IntVector2(2, 3), Dungeonator.CellTypes.FLOOR);
+                    if (cell.HasValue) at = cell.Value.ToVector2() + new Vector2(0f, 1f);
+                }
+                p.WarpToPoint(at);
+                var r = AccessTools.Field(typeof(PlayerController), "m_renderer").GetValue(p) as Renderer;
+                if (r) r.enabled = true;
+                p.ToggleShadowVisiblity(true);
+                SpriteOutlineManager.ToggleOutlineRenderers(p.sprite, true);
+                AccessTools.Method(typeof(PlayerController), "TogglePitClipping").Invoke(p, new object[] { false });
+                AccessTools.Property(typeof(PlayerController), "IgnoredByCamera").SetValue(p, false, null);
+                p.specRigidbody.CollideWithTileMap = true;
+                p.specRigidbody.CollideWithOthers = true;
+                p.ToggleGunRenderers(true, string.Empty);
+                p.ToggleHandRenderers(true, string.Empty);
+                p.CurrentInputState = PlayerInputState.AllInput;
+                Camera.IndependentCamera.Apply();
+                Restores++;
+                Plugin.Log.LogWarning("InputWatchdog: the pit respawn got stuck, put you back on the floor");
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning("InputWatchdog: hard fall rescue failed: " + e.Message); }
+        }
         public static int ScreenRestores;
 
         /// <summary>
@@ -69,6 +101,12 @@ namespace GungeonOnline.Game
                         Plugin.Log.LogWarning("InputWatchdog: a fall never finished, respawned at the edge");
                     }
                     catch (System.Exception e) { Plugin.Log.LogWarning("InputWatchdog: pit respawn failed: " + e.Message); }
+                }
+                else if (fallRescued && Time.realtimeSinceStartup - fallSince > 16f)
+                {
+                    // The respawn itself got stuck waiting on something: end the fall here and stand on the floor.
+                    fallSince = Time.realtimeSinceStartup;
+                    HardFallRescue(p);
                 }
             }
             else { fallSince = -1f; fallRescued = false; }
