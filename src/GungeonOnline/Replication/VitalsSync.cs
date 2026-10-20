@@ -154,12 +154,14 @@ namespace GungeonOnline.Replication
 
         static void DiedPostfix(PlayerController __instance)
         {
-            if (!IsHostSession || scope || Instance == null) return;
+            // Also while applying a guest's own fatal hit (scope): with three or four players the other guests
+            // learn that death only from the host. The guest who died is never told about itself.
+            if (!IsHostSession || Instance == null) return;
             int slot = PlayerSlots.SlotOf(__instance);
             if (slot < 0) return;
             var w = Instance.w;
             w.Reset(); w.U8(EvPlayerDied); w.U8((byte)slot);
-            Instance.SendReady(w.ToArray());
+            Instance.SendReady(w.ToArray(), slot);
         }
 
         static void RevivedPostfix(PlayerController __instance, Vector2 chestBottomCenter)
@@ -172,11 +174,11 @@ namespace GungeonOnline.Replication
             Instance.SendReady(w.ToArray());
         }
 
-        void SendReady(byte[] msg)
+        void SendReady(byte[] msg, int exceptSlot = -1)
         {
             var ws = WorldSync.Instance;
             foreach (var c in NetSession.Instance.Node.Connections)
-                if (ws != null && ws.IsReady(c)) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
+                if (c.Slot != exceptSlot && ws != null && ws.IsReady(c)) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
         }
 
         /// <summary>Events 40-49, called by WorldSync's event router on both sides.</summary>
@@ -216,6 +218,7 @@ namespace GungeonOnline.Replication
             else if (type == EvPlayerDied && !NetSession.IsHost)
             {
                 int slot = r.U8();
+                if (slot == NetSession.LocalSlot) return; // our own death already ran here
                 var p = PlayerSlots.ForSlot(slot);
                 // Not IsDead: a health update can set this copy to 0 before this event lands, and the death (ghost,
                 // or game over when nobody is left) must still run here exactly once.

@@ -95,7 +95,7 @@ namespace GungeonOnline.Game
                     Vector3 av = cam.WorldToViewportPoint(p.unadjustedAimPoint);
                     if (av.z > 0 && av.x > 0 && av.x < 1 && av.y > 0 && av.y < 1)
                     {
-                        var c = NameColors[Mathf.Clamp(NetConfig.NameColor.Value, 0, NameColors.Length - 1)];
+                        var c = ColorFor(p);
                         GungeonUI.SpriteAt("crosshair", new Vector2(av.x * Screen.width, (1f - av.y) * Screen.height), new Color(c.r, c.g, c.b, 0.85f * onA));
                     }
                 }
@@ -104,13 +104,21 @@ namespace GungeonOnline.Game
             }
         }
 
+        /// <summary>Your chosen colour for the first friend; each further friend gets the next colour, so tags tell them apart.</summary>
+        static Color ColorFor(PlayerController p)
+        {
+            int slot = PlayerSlots.SlotOf(p), before = 0;
+            foreach (var kv in PlayerSlots.Remotes) if (kv.Key < slot) before++;
+            return NameColors[(Mathf.Clamp(NetConfig.NameColor.Value, 0, NameColors.Length - 1) + before) % NameColors.Length];
+        }
+
         // ---------- Name tags (on screen) ----------
 
         void DrawTag(int style, PlayerController p, string name, Vector2 head, float a)
         {
             int px = GungeonUI.Px;
             float lift = (2 + (1f - a) * 3) * px; // rises into place as it fades in
-            var pick = NameColors[Mathf.Clamp(NetConfig.NameColor.Value, 0, NameColors.Length - 1)];
+            var pick = ColorFor(p);
             a *= NetConfig.NameOpacity.Value == 1 ? 0.75f : NetConfig.NameOpacity.Value == 2 ? 0.5f : 1f;
             var gold = new Color(pick.r, pick.g, pick.b, a);
             var font = style == 3 ? GungeonUI.Font.Menu : GungeonUI.Font.Small;

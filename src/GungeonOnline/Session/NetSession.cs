@@ -101,7 +101,8 @@ namespace GungeonOnline.Session
             gameObject.AddComponent<NetFlush>();
         }
 
-        public void On(Channel ch, Action<Connection, byte[], Delivery> h) => handlers[ch] = h;
+        /// <summary>Listen on a channel. Several listeners may share one (the lobby and the peer lanes both use Lobby).</summary>
+        public void On(Channel ch, Action<Connection, byte[], Delivery> h) => handlers[ch] = handlers.TryGetValue(ch, out var prev) ? prev + h : h;
 
         Handshake MakeHandshake() => new Handshake { ModVersion = Plugin.Version, GameHash = GameHash, PlayerName = NetConfig.PlayerName.Value, PlayerId = NetConfig.PlayerId.Value };
 
@@ -162,7 +163,7 @@ namespace GungeonOnline.Session
             IDatagramSocket s = udp = new UdpDatagramSocket(port);
             if (withSteam && steam != null)
             {
-                var steamSock = new SteamDatagramSocket(id => node != null && (node.IsHost || (steamHost is SteamEndPoint h && h.Id == id)));
+                var steamSock = new SteamDatagramSocket(id => node != null && (node.IsHost || (steamHost is SteamEndPoint h && h.Id == id) || PeerLanes.KnownSteamIds.Contains(id.m_SteamID)));
                 s = new CompositeSocket(ep => ep is SteamEndPoint ? 1 : 0, s, steamSock);
             }
             float dropAt = EnvF("GO_DROP_AT"), dropFor = EnvF("GO_DROP_FOR");
@@ -299,7 +300,7 @@ namespace GungeonOnline.Session
                 {
                     bool returning = !string.IsNullOrEmpty(c.PlayerId) && KnownPlayers.ContainsKey(c.PlayerId);
                     if (!string.IsNullOrEmpty(c.PlayerId)) KnownPlayers[c.PlayerId] = c.Slot;
-                    Toasts.Show((string.IsNullOrEmpty(name) || name == "Gungeoneer" ? "Your friend" : name) + (returning ? " is back" : " joined"));
+                    Toasts.Show((string.IsNullOrEmpty(name) || name == "Gungeoneer" ? "A player" : name) + (returning ? " is back" : " joined"));
                 }
                 else
                 {
@@ -315,7 +316,7 @@ namespace GungeonOnline.Session
                 Plugin.Log.LogInfo($"Peer left: slot {c.Slot} ({why})");
                 PeerLeft?.Invoke(c, why);
                 if (node == null) return;
-                string who = string.IsNullOrEmpty(c.Tag as string) || (string)c.Tag == "Gungeoneer" ? (node.IsHost ? "Your friend" : "The host") : (string)c.Tag;
+                string who = string.IsNullOrEmpty(c.Tag as string) || (string)c.Tag == "Gungeoneer" ? (node.IsHost ? "A player" : "The host") : (string)c.Tag;
                 if (node.IsHost)
                 {
                     bool quit = why == "left" || why == "session closed" || why == "game closed";

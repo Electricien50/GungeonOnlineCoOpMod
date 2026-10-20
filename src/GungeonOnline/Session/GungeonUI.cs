@@ -158,6 +158,21 @@ namespace GungeonOnline.Session
             return tallest > 0 ? tallest : f.LineHeight;
         }
 
+        /// <summary>A connection's player by name, or "your friend" when they have not set one.</summary>
+        public static string WhoName(Net.Connection c)
+        {
+            var tag = c != null ? c.Tag as string : null;
+            return string.IsNullOrEmpty(tag) || tag == "Gungeoneer" ? "your friend" : tag;
+        }
+
+        /// <summary>"A", "A and B", "A, B and C".</summary>
+        public static string NameList(System.Collections.Generic.List<string> names)
+        {
+            if (names.Count == 0) return "";
+            if (names.Count == 1) return names[0];
+            return string.Join(", ", names.GetRange(0, names.Count - 1).ToArray()) + " and " + names[names.Count - 1];
+        }
+
         /// <summary>Friendly name for a player who has not set one: their character, the way the game names them.</summary>
         public static string CharacterName(PlayerController p)
         {

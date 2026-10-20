@@ -1,21 +1,16 @@
 # Changelog
 
-## 1.0.6
+## 1.1 (in progress)
 
-**Fixes**
-- Hosting from inside a run you started alone no longer lets a friend join a game that cannot sync (they stayed in the Breach while you saw a frozen copy of them). That run's floors were not built in a way your friend's game can repeat, so the game now says to start online play from the Breach. Hosting in the Breach and then starting the run works as before, and friends can still join a run that was started online.
-
-## 1.0.5
-
-**Fixes**
-- Keyboard and mouse now work online. With two players the game turned keyboard and mouse off for player one, so keyboard players could not move or pause once a run started.
-- Typing an invite code and pressing Enter now joins. Before, Enter did nothing in the code box; a code that is not valid now says so.
-
-**Improvements**
-- Lower input delay. Your friend's presses are now timed by when they actually arrive instead of by the next frame that happens to read them, so their character reacts sooner, on every frame rate and connection. Measured press to use: about 50 ms down to 20 ms on the same network, 47 to 29 ms at 25 ms ping, 76 to 57 ms at 70 ms ping.
-- Your friend's character no longer drifts out of place or gets snapped back. Every input your friend's game sends now says exactly where their character was, and your game puts it there, so both screens always agree on where everyone stands without any small corrections.
-- When the host's game moves a player on purpose (the Classic pull into a fight, a warp, a boss intro), that player's own game now makes the same move.
-- If your friend's connection pauses, their character now stands still until it comes back instead of running on with the last button held.
+**3 and 4 players**
+- Online co-op for up to 4 players. The host picks *Players: 2, 3 or 4* on the Hosting screen; everyone else sees the host's choice.
+- Each player keeps their own camera, controller and HUD. Players 3 and 4 get their own HUD panels, made from the game's own, under the first two.
+- A death is a knock-out while anyone is still standing; the run ends only when everyone is down. A revive chest or boss pedestal brings every ghost back.
+- Classic style pulls everyone into the fight; Explore stays one fight at a time.
+- Rooms stay lit and active for every player, room-clear rewards reach everyone, and players 3 and 4 get credit for their own kills, damage and synergies.
+- Enemy health scales with the player count: 1.25x for 2 (the game's own), 1.5x for 3, 1.75x for 4 (host settings).
+- Each friend gets their own name-tag colour, starting from the one you chose.
+- Stays two-player: the game's own mid-run save (the mod's run backups cover everyone), couch co-op on one PC, the boss card portraits.
 
 ## 1.0.4
 

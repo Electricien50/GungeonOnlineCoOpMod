@@ -41,7 +41,7 @@ namespace GungeonOnline.Game
                 foreach (var c in NetSession.Instance.Node.Connections)
                     if (lobby == null || !lobby.Roster.ContainsKey(c.Slot) || string.IsNullOrEmpty(lobby.Roster[c.Slot].Prefab) || PlayerSlots.ForSlot(c.Slot) == null)
                     {
-                        Say("Waiting for your friend to pick a character");
+                        Say("Waiting for " + Session.GungeonUI.WhoName(c) + " to pick a character");
                         return false;
                     }
             return true;

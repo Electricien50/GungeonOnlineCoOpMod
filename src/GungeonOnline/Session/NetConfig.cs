@@ -9,6 +9,11 @@ namespace GungeonOnline.Session
         public static ConfigEntry<string> PlayerName;
         public static ConfigEntry<int> Port;
         public static ConfigEntry<int> MaxPlayers;
+        public static ConfigEntry<float> EnemyHealth2, EnemyHealth3, EnemyHealth4;
+
+        /// <summary>Enemy health multiplier for a player count (1 player: the game's own 1.0).</summary>
+        public static float EnemyHealthFor(int players) =>
+            players <= 1 ? 1f : players == 2 ? EnemyHealth2.Value : players == 3 ? EnemyHealth3.Value : EnemyHealth4.Value;
         public static ConfigEntry<bool> UseUpnp;
         public static ConfigEntry<string> StunServer;
         public static ConfigEntry<KeyCode> OverlayKey;
@@ -32,7 +37,10 @@ namespace GungeonOnline.Session
             var gn = System.Environment.GetEnvironmentVariable("GO_NAME"); // harness: made-up handles for screenshots
             if (!string.IsNullOrEmpty(gn)) { var ns = gn.Split(','); PlayerName.Value = System.Environment.GetEnvironmentVariable("GO_AUTO") == "host" || ns.Length < 2 ? ns[0] : ns[1]; }
             Port = c.Bind("Session", "Port", 47624, "UDP port used when hosting. Forward it on your router if automatic setup (UPnP) fails.");
-            MaxPlayers = c.Bind("Session", "MaxPlayers", 2, new ConfigDescription("Players per session including the host. The game supports 2 today.", new AcceptableValueRange<int>(2, 4)));
+            MaxPlayers = c.Bind("Session", "MaxPlayers", 2, new ConfigDescription("Players per session including the host (host only). 2 to 4 are supported; 5 to 8 are experimental.", new AcceptableValueRange<int>(2, 8)));
+            EnemyHealth2 = c.Bind("Gameplay", "EnemyHealth2Players", 1.25f, "Enemy health multiplier with 2 players (host only). The game's own co-op value is 1.25.");
+            EnemyHealth3 = c.Bind("Gameplay", "EnemyHealth3Players", 1.5f, "Enemy health multiplier with 3 players (host only).");
+            EnemyHealth4 = c.Bind("Gameplay", "EnemyHealth4Players", 1.75f, "Enemy health multiplier with 4 or more players (host only).");
             UseUpnp = c.Bind("Session", "UseUpnp", true, "Ask the router to forward the port automatically when hosting.");
             StunServer = c.Bind("Session", "StunServer", "stun.l.google.com:19302", "Server used to learn your public address for invite codes.");
             OverlayKey = c.Bind("Interface", "OverlayKey", KeyCode.F8, "Opens the online menu.");
@@ -40,6 +48,8 @@ namespace GungeonOnline.Session
             SecondFightLock = c.Bind("Gameplay", "SecondFightLock", true, "While one room is in combat, other uncleared rooms stay shut.");
             LocatorStyle = c.Bind("Interface", "LocatorStyle", 5, new ConfigDescription("When your friend is off screen, a marker at the screen edge points to them. 5 pickup tag (default), 1 speech bubble, 0 off.", new AcceptableValueRange<int>(0, 5)));
             CoopStyle = c.Bind("Gameplay", "CoopStyle", 0, new ConfigDescription("Host only. 0 Classic: start a fight and your partner is pulled in, like local co-op. 1 Explore: one fight at a time, nobody pulled.", new AcceptableValueRange<int>(0, 1)));
+            var mp = System.Environment.GetEnvironmentVariable("GO_MAX_PLAYERS"); // harness: players in the test
+            if (mp != null && int.TryParse(mp, out var mpi)) MaxPlayers.Value = mpi;
             var cs = System.Environment.GetEnvironmentVariable("GO_COOP_STYLE"); // harness
             if (!string.IsNullOrEmpty(cs)) { int v; if (int.TryParse(cs, out v)) CoopStyle.Value = v; }
             NameColor = c.Bind("Interface", "NameColor", 0, new ConfigDescription("Name tag color: 0 gold, 1 white, 2 sky, 3 rose, 4 mint.", new AcceptableValueRange<int>(0, 4)));

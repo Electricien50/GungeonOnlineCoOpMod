@@ -10,7 +10,12 @@ namespace GungeonOnline.Dev
         bool suspended;
         float bothSince = -1f;
 
-        /// <summary>Test instances are always silent: Wwise volumes forced to 0 every frame, engine suspended once it is up.</summary>
+        float nextSuspend;
+
+        /// <summary>
+        /// Test instances are always silent: Wwise volumes forced to 0 every frame, the engine suspended once it is up
+        /// and again every second (the game wakes it on focus and scene changes; DevEnv also blocks that wake-up).
+        /// </summary>
         void Mute()
         {
             AudioListener.volume = 0f;
@@ -19,10 +24,12 @@ namespace GungeonOnline.Dev
                 AkSoundEngine.SetRTPCValue("VOL_MUS", 0f);
                 AkSoundEngine.SetRTPCValue("VOL_SFX", 0f);
                 AkSoundEngine.SetRTPCValue("VOL_UI", 0f);
-                if (!suspended && AkSoundEngine.IsInitialized())
+                if (AkSoundEngine.IsInitialized() && (!suspended || Time.realtimeSinceStartup >= nextSuspend))
                 {
-                    suspended = AkSoundEngine.Suspend() == AKRESULT.AK_Success;
-                    if (suspended) Plugin.Log.LogInfo("Harness: audio engine suspended (muted)");
+                    nextSuspend = Time.realtimeSinceStartup + 1f;
+                    bool ok = AkSoundEngine.Suspend() == AKRESULT.AK_Success;
+                    if (ok && !suspended) Plugin.Log.LogInfo("Harness: audio engine suspended (muted)");
+                    suspended = ok;
                 }
             }
             catch { }
@@ -376,7 +383,7 @@ namespace GungeonOnline.Dev
             Plugin.Log.LogInfo("Harness: client at half a heart");
         }
 
-        bool forcedBlack, reportSent;
+        bool forcedBlack, reportSent, hudTested;
         int couchStep; float couchAt;
         /// <summary>Harness (GO_COUCH_TEST=prefab, no session): couch co-op player two joins at the Cultist, then talks
         /// to that Gungeoneer's statue and must become them (player one stays), then the run starts.</summary>
@@ -502,6 +509,21 @@ namespace GungeonOnline.Dev
         float fightAt = -1f;
         bool fightDone;
 
+        static readonly bool keepAlive = System.Environment.GetEnvironmentVariable("GO_KEEP_ALIVE") == "1";
+        float nextKeepAlive;
+
+        /// <summary>
+        /// Harness, long soaks (GO_KEEP_ALIVE=1): every machine keeps its own player invulnerable on every floor, so a
+        /// 30-minute run is not cut short by a game over (the fight setup's invulnerability ends with the floor).
+        /// </summary>
+        void KeepAlive(float t)
+        {
+            if (!keepAlive || t < nextKeepAlive) return;
+            nextKeepAlive = t + 1f;
+            var me = GameManager.HasInstance ? GameManager.Instance.PrimaryPlayer : null;
+            if (me && me.healthHaver && me.healthHaver.IsVulnerable) me.healthHaver.IsVulnerable = false;
+        }
+
         /// <summary>
         /// Harness host only (GO_FIGHT=together|split): once the client is ready on floor 1, make players
         /// invulnerable and warp them into rooms that still have enemies.
@@ -512,7 +534,7 @@ namespace GungeonOnline.Dev
             if (fightDone || mode == null || !Session.NetSession.IsHost) return;
             var ws = Replication.WorldSync.Instance;
             var gm = GameManager.Instance;
-            if (ws == null || ws.ReadyPeers == 0 || gm.Dungeon == null || Game.SceneObjects.InBreach) return;
+            if (ws == null || ws.ReadyPeers < DevEnv.ExpectPlayers - 1 || gm.Dungeon == null || Game.SceneObjects.InBreach) return;
             if (fightAt < 0) { fightAt = t + 3f; return; }
             if (t < fightAt) return;
             fightDone = true;
@@ -576,7 +598,9 @@ namespace GungeonOnline.Dev
                     if (!p) continue;
                     p.healthHaver.IsVulnerable = false;
                     var cart = list[ci % list.Count];
-                    p.WarpToPoint(cart.specRigidbody.UnitCenter + new Vector2(ci == 0 ? -1.5f : 1.5f, -1.5f));
+                    int n = gm.AllPlayers.Length;
+                    float x = n <= 2 ? (ci == 0 ? -1.5f : 1.5f) : (ci - (n - 1) / 2f) * 1.5f; // more players: spread along the track
+                    p.WarpToPoint(cart.specRigidbody.UnitCenter + new Vector2(x, -1.5f));
                     ci++;
                 }
                 holdFloor = true;
@@ -634,6 +658,17 @@ namespace GungeonOnline.Dev
 
         bool updateErrorLogged;
 
+        /// <summary>slot:player id for everyone on this machine, local first.</summary>
+        static string IdList()
+        {
+            var sb = new System.Text.StringBuilder();
+            var me = Game.PlayerSlots.Local;
+            if (me) sb.Append(Game.PlayerSlots.LocalSlot).Append(':').Append(me.PlayerIDX);
+            foreach (var kv in Game.PlayerSlots.Remotes)
+                if (kv.Value) sb.Append(';').Append(kv.Key).Append(':').Append(kv.Value.PlayerIDX);
+            return sb.ToString();
+        }
+
         void Update()
         {
             if (!DevEnv.IsHarness) return;
@@ -672,7 +707,7 @@ namespace GungeonOnline.Dev
                         string rp = kv.Value ? kv.Value.transform.position.ToString("F2") : "dead";
                         net += $" remote{kv.Key}={rp}";
                         if (Replication.InputSync.Instance.Streams.TryGetValue(kv.Key, out var st))
-                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms lag={st.PollLagMs:F1}ms{Replication.InputSync.E2eText(st)} clock={(Replication.InputSync.PollClock ? "frame" : "arrival")} last={st.Last}]";
+                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms lag={st.PollLagMs:F1}ms{Replication.InputSync.E2eText(st)} lane={(Session.PeerLanes.IsDirect(kv.Key) ? "direct" : "relay")} fresh={st.FreshDirect}/{st.FreshRelay} last={st.Last}]";
                         if (kv.Value)
                         {
                             var bi = BraveInput.GetInstanceForPlayer(kv.Value.PlayerIDX);
@@ -713,7 +748,7 @@ namespace GungeonOnline.Dev
                     net += $" syncLocal[{Replication.PlayerSync.Instance.Stats(Session.NetSession.LocalSlot)}] snaps={Replication.PlayerSync.Instance.SnapshotsApplied}";
                 }
                 string fp = Game.RunSync.Instance != null ? Game.RunSync.Instance.LastFingerprint : "-";
-                string line = $"t={t:F1} frame={Time.frameCount} fps={1f / Mathf.Max(0.0001f, Time.smoothDeltaTime):F0} {NetProfiler.Summary()} scene={scene} floor=[{fp}] gm={gm != null} players={players} p0={pos} net={net}";
+                string line = $"t={t:F1} frame={Time.frameCount} fps={1f / Mathf.Max(0.0001f, Time.smoothDeltaTime):F0} {NetProfiler.Summary()} scene={scene} floor=[{fp}] gm={gm != null} players={players} expect={DevEnv.ExpectPlayers} ids[{IdList()}] p0={pos} net={net}";
                 try { File.WriteAllText(DevEnv.StatusFile, line); } catch { }
                 if (Session.NetSession.Active && gm != null && gm.PrimaryPlayer != null)
                 {
@@ -733,7 +768,7 @@ namespace GungeonOnline.Dev
                     Plugin.Log.LogInfo(tr);
                 }
             }
-            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Game.SceneObjects.InBreach && (GameManager.Instance.AllPlayers.Length >= 2 || (System.Environment.GetEnvironmentVariable("GO_SOLO_START") == "1" && GameManager.Instance.PrimaryPlayer != null)))
+            if (DevEnv.StartRunAt >= 0 && Session.NetSession.IsHost && Game.SceneObjects.InBreach && (GameManager.Instance.AllPlayers.Length >= DevEnv.ExpectPlayers || (System.Environment.GetEnvironmentVariable("GO_SOLO_START") == "1" && GameManager.Instance.PrimaryPlayer != null)))
             {
                 if (bothSince < 0) bothSince = t;
                 if (t - bothSince >= DevEnv.StartRunAt)
@@ -755,10 +790,12 @@ namespace GungeonOnline.Dev
             HostFloorCycle(t);
             UiHooks(t);
             HostFightSetup(t);
+            KeepAlive(t);
             ClientLowHp();
             HostDiesAfterGuest();
             ForceBlack(Time.realtimeSinceStartup);
             CouchTest();
+            if (Game.NPlayers.HudPatches.LayoutTest && !hudTested && Game.SceneObjects.OnDungeonFloor && Time.realtimeSinceStartup > 30f) { hudTested = true; Game.NPlayers.HudPatches.TestExtend(); }
             var rep = System.Environment.GetEnvironmentVariable("GO_SEND_REPORT_AT");
             if (!reportSent && rep != null && Time.realtimeSinceStartup > float.Parse(rep, System.Globalization.CultureInfo.InvariantCulture)) { reportSent = true; Session.Reports.Save(); }
             ClientTestBuy(t);

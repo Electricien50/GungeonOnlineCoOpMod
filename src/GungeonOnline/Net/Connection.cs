@@ -376,6 +376,7 @@ namespace GungeonOnline.Net
         Disconnect = 5,
         Punch = 6,
         KeepAlive = 7, // "still here": sent from a background thread while the game thread is busy loading
+        Lane = 8,      // guest to guest, input only (see Session/PeerLanes)
     }
 
     public static class Packet

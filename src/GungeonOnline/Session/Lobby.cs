@@ -23,6 +23,8 @@ namespace GungeonOnline.Session
 
         /// <summary>Guest: the co-op style the host chose (-1 until it arrives).</summary>
         public static int HostCoopStyle = -1;
+        public static int HostMaxPlayers = -1;
+        int sentMax = -1;
         int sentStyle = -1;
         float nextAimCheck;
         float nextChoiceCheck;
@@ -45,7 +47,7 @@ namespace GungeonOnline.Session
                 PlayerSlots.Despawn(c.Slot);
                 SendRoster();
             };
-            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); HostCoopStyle = -1; sentStyle = -1; PlayerSlots.Clear(); };
+            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); HostCoopStyle = -1; sentStyle = -1; HostMaxPlayers = -1; sentMax = -1; PlayerSlots.Clear(); };
         }
 
         static string PrefabOf(PlayerController p)
@@ -98,7 +100,7 @@ namespace GungeonOnline.Session
                     }
                 }
             }
-            if (NetSession.IsHost && NetConfig.CoopStyle.Value != sentStyle) SendStyle();
+            if (NetSession.IsHost && (NetConfig.CoopStyle.Value != sentStyle || NetConfig.MaxPlayers.Value != sentMax)) SendStyle();
             if (Time.realtimeSinceStartup >= nextAimCheck && local != null) { nextAimCheck = Time.realtimeSinceStartup + 1f; CheckAim(); }
             // Spawn anyone we know about but have not spawned (our own player may have appeared late).
             if (local != null)
@@ -145,8 +147,9 @@ namespace GungeonOnline.Session
         void SendStyle()
         {
             sentStyle = NetConfig.CoopStyle.Value;
+            sentMax = NetConfig.MaxPlayers.Value;
             var w = new WireWriter(4);
-            w.U8(MsgStyle); w.U8((byte)sentStyle);
+            w.U8(MsgStyle); w.U8((byte)sentStyle); w.U8((byte)sentMax);
             NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
         }
 
@@ -163,7 +166,14 @@ namespace GungeonOnline.Session
         {
             var r = new WireReader(data, 0, data.Length);
             byte type = r.U8();
-            if (type == MsgStyle && !NetSession.IsHost) { int v = r.U8(); if (HostCoopStyle >= 0 && v != HostCoopStyle) Toasts.Show("The host switched to " + (v == 0 ? "Classic" : "Explore") + " co-op"); HostCoopStyle = v; return; }
+            if (type == MsgStyle && !NetSession.IsHost)
+            {
+                int v = r.U8();
+                if (HostCoopStyle >= 0 && v != HostCoopStyle) Toasts.Show("The host switched to " + (v == 0 ? "Classic" : "Explore") + " co-op");
+                HostCoopStyle = v;
+                if (r.Remaining > 0) HostMaxPlayers = r.U8();
+                return;
+            }
             if (type == MsgAim)
             {
                 int slot = r.U8();

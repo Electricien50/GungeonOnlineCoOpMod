@@ -62,7 +62,15 @@ namespace GungeonOnline.Camera
 
         static bool SkipInSession() => !Session.NetSession.Active;
 
-        static bool PullPrefix() => !Session.NetSession.Active || (Session.NetSession.IsHost && Session.NetConfig.CoopStyle.Value == 0);
+        static bool PullPrefix(PlayerController __instance)
+        {
+            if (!Session.NetSession.Active) return true;
+            if (!Session.NetSession.IsHost || Session.NetConfig.CoopStyle.Value != 0) return false;
+            if (!Game.NPlayers.Players.NPlus) return true;
+            // Three or four players: the game's timer only follows one partner.
+            Game.NPlayers.GatherPatches.PullForN(__instance);
+            return false;
+        }
 
         public static int Pulls;
 

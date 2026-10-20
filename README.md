@@ -81,7 +81,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-Download the latest **`GungeonOnline-1.0.6.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
+Download the latest **`GungeonOnline-1.1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
 
 ### Option A: the installer (easiest)
 
@@ -120,9 +120,19 @@ Start the game and press pause: you should see **PLAY ONLINE** in the pause menu
 
 If the host's router or firewall blocks the join, the mod opens a path by itself within a few seconds. If it still doesn't go through, your friend's *reply code* is copied for them: they send it to you and you pick *Let in friend* while they're still trying. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
 
+## Playing with 3 or 4
+
+Host as usual and set **Players** to 3 or 4 on the Hosting screen (it's next to the co-op style). Send the same invite code to everyone, or invite them from Steam. Each player picks any character in their own Breach.
+
+- Everyone has their own camera, controller and HUD. Players 3 and 4 get HUD panels under the first two.
+- Going down is a knock-out while anyone is still up: the run ends only when everyone is down. Any revive chest or boss pedestal brings everyone back.
+- Classic style pulls everyone into the fight; Explore is one fight at a time.
+- Enemies get 1.25x health with 2 players (the game's own number), 1.5x with 3 and 1.75x with 4. Change it in the config if you want it easier or harder.
+- Each friend's name tag has its own colour.
+
 ## Roadmap
 
-- **4-player support is in active development**. The netcode was built for 4 from day one; today the game side supports 2.
+- **More than 4 players** as an experimental option, once 4 has had time in the wild.
 - **Free for all co-op style:** fight in different rooms at the same time.
 
 ## Donate
@@ -188,7 +198,7 @@ Your normal save is used and gets credit for runs you play online. Run backups g
 
 ## Status
 
-Version 1.0.6 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
+Version 1.1.0 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
 
 ## Settings
 

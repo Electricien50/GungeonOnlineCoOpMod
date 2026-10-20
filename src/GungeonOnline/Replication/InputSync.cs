@@ -42,13 +42,35 @@ namespace GungeonOnline.Replication
             public double JitterMs;
             public double BufferMs;
             public int Starved, Merged, Applied;
+            public int FreshDirect, FreshRelay; // which route delivered a new frame first
             public double LastLateMs; // how long the applied frame waited after it was due
-            public double PollLagMs;  // average time a packet sat waiting for the frame to start (not counted as jitter)
+            public double PollLagMs;  // average time a packet sat waiting for the frame to start (no longer counted as jitter)
             // Tests only: the sender's high-resolution clock for each frame, and the measured press-to-use delays.
             public readonly long[] SentQpc = new long[256];
             public readonly uint[] SentQpcSeq = new uint[256];
             public readonly List<double> E2e = new List<double>();
+        }
 
+        // Tests only. GO_MEASURE_E2E=1: each input packet also carries the sender's high-resolution clock for its newest
+        // frame; both test games run on one PC and share that clock, so the receiver measures the true delay from a
+        // press on the sender to the frame that uses it here. GO_INPUT_CLOCK=poll times packets by the frame that
+        // drains them (the 1.0 method), so the two methods can be compared in one build. GO_BUF_PCT: jitter percentile.
+        static readonly bool measureE2E = System.Environment.GetEnvironmentVariable("GO_MEASURE_E2E") == "1";
+        static readonly bool pollClock = System.Environment.GetEnvironmentVariable("GO_INPUT_CLOCK") == "poll";
+        static readonly double bufPercentile = ParsePct(System.Environment.GetEnvironmentVariable("GO_BUF_PCT"));
+        static double ParsePct(string v) =>
+            double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 && d < 1 ? d : 0.9;
+        readonly long[] localQpc = new long[256];
+
+        /// <summary>Tests: mean and 95th percentile of the measured press-to-use delay for a stream (ms), or null.</summary>
+        public static string E2eText(Stream s)
+        {
+            if (s.E2e.Count == 0) return "";
+            var copy = new List<double>(s.E2e);
+            copy.Sort();
+            double sum = 0;
+            foreach (var x in copy) sum += x;
+            return $" e2e={sum / copy.Count:F1}ms e2e95={copy[(int)(copy.Count * 0.95)]:F1}ms";
         }
 
         public struct Frame
@@ -71,27 +93,6 @@ namespace GungeonOnline.Replication
         const uint StillAfterMs = 250;
 
         public readonly Dictionary<int, Stream> Streams = new Dictionary<int, Stream>();
-
-        // Tests only. GO_MEASURE_E2E=1: each input packet also carries the sender's high-resolution clock for its newest
-        // frame; both test games run on one PC and share that clock, so the receiver measures the true delay from a
-        // press on the sender to the frame that uses it here. GO_INPUT_CLOCK=poll forces the 1.0 timing everywhere.
-        static readonly bool measureE2E = System.Environment.GetEnvironmentVariable("GO_MEASURE_E2E") == "1";
-        static readonly bool pollClock = System.Environment.GetEnvironmentVariable("GO_INPUT_CLOCK") == "poll";
-        public static bool PollClock => pollClock;
-        readonly long[] localQpc = new long[256];
-
-        /// <summary>Tests: mean and 95th percentile of the measured press-to-use delay for a stream (ms).</summary>
-        public static string E2eText(Stream s)
-        {
-            if (s.E2e.Count == 0) return "";
-            var copy = new List<double>(s.E2e);
-            copy.Sort();
-            double sum = 0;
-            foreach (var x in copy) sum += x;
-            return $" e2e={sum / copy.Count:F1}ms e2e95={copy[(int)(copy.Count * 0.95)]:F1}ms";
-        }
-
-
         readonly WireWriter w = new WireWriter(512);
 
         static uint NowMs => (uint)(Time.realtimeSinceStartup * 1000.0);
@@ -223,8 +224,10 @@ namespace GungeonOnline.Replication
             localState[LocalSeq & 255] = (byte)((local.IsFalling ? StateFalling : 0) | (local.currentMineCart ? StateCart : 0));
             localQpc[LocalSeq & 255] = System.Diagnostics.Stopwatch.GetTimestamp();
             WriteStream(NetSession.LocalSlot, LocalSeq);
-            NetSession.Instance.Node.Broadcast((byte)Channel.Input, w.ToArray(), Delivery.Unreliable);
+            var payload = w.ToArray();
+            NetSession.Instance.Node.Broadcast((byte)Channel.Input, payload, Delivery.Unreliable);
             NetSession.Instance.FlushNow(); // out the door this frame
+            Session.PeerLanes.Instance?.SendInput(payload); // and straight to the other guests
         }
 
         void WriteStream(int slot, uint newest)
@@ -258,22 +261,36 @@ namespace GungeonOnline.Replication
 
         void OnInput(Connection c, byte[] data, Delivery d)
         {
-            var r = new WireReader(data, 0, data.Length);
-            int slot = r.U8();
+            int slot = data.Length > 0 ? data[0] : -1;
+            if (NetSession.IsHost && slot != c.Slot) return; // a client may only speak for itself
+            Ingest(slot, data, 0, false, c);
+        }
+
+        /// <summary>A guest's input that came straight from them (PeerLanes checked the sender).</summary>
+        public void IngestLane(int slot, byte[] data, int pos)
+        {
+            if (pos >= data.Length || data[pos] != slot) return; // the lane's slot and the payload's must agree
+            Ingest(slot, data, pos, true, null);
+        }
+
+        void Ingest(int slot, byte[] data, int pos, bool direct, Connection c)
+        {
+            var r = new WireReader(data, pos, data.Length - pos);
+            r.U8(); // slot, checked by the caller
             uint newest = r.U32();
             uint newestTime = r.U32();
             int count = r.U8();
-            if (NetSession.IsHost && slot != c.Slot) return; // a client may only speak for itself
             if (slot == NetSession.LocalSlot) return;
             var s = Get(slot);
+            // The packet's real arrival, not the start of the frame that drained it: the wait for the frame is
+            // ours, not the network's, and must not widen the playout buffer.
             double now = NowMs;
-            bool fresh = newest > s.NewestSeq;
-            if (fresh) s.LastFreshMs = NowMs;
-            // The packet's real arrival, not the start of the frame that drained it: the wait for our frame is not the
-            // network's jitter and must not widen the playout buffer.
             double arrival = NetSession.Instance.Node != null && NetSession.Instance.Node.CurrentArrival > 0 ? NetSession.Instance.Node.CurrentArrival * 1000.0 : now;
             s.PollLagMs = s.PollLagMs * 0.95 + (now - arrival) * 0.05;
             if (!pollClock) now = arrival;
+            bool fresh = newest > s.NewestSeq;
+            if (fresh) s.LastFreshMs = NowMs;
+            if (fresh) { if (direct) s.FreshDirect++; else s.FreshRelay++; }
             Observe(s, now, newestTime, fresh);
             using (var ms = new System.IO.MemoryStream(data, r.Pos, data.Length - r.Pos))
             using (var br = new System.IO.BinaryReader(ms))
@@ -283,11 +300,11 @@ namespace GungeonOnline.Replication
                     uint seq = newest - (uint)i;
                     uint t = newestTime - br.ReadUInt16();
                     var f = InputFrame.Read(br);
-                    var pos = new Vector2(br.ReadSingle(), br.ReadSingle());
+                    var at = new Vector2(br.ReadSingle(), br.ReadSingle());
                     byte epoch = br.ReadByte();
                     byte state = br.ReadByte();
                     if (seq <= s.AppliedSeq || s.Pending.ContainsKey(seq)) continue;
-                    s.Pending[seq] = new Frame { Time = t, Input = f, Pos = pos, Epoch = epoch, State = state };
+                    s.Pending[seq] = new Frame { Time = t, Input = f, Pos = at, Epoch = epoch, State = state };
                 }
                 if (measureE2E && ms.Length - ms.Position >= 8)
                 {
@@ -296,9 +313,13 @@ namespace GungeonOnline.Replication
                 }
             }
             if (newest > s.NewestSeq) s.NewestSeq = newest;
-            if (NetSession.IsHost)
+            if (c != null && NetSession.IsHost && NetSession.Instance.Node.Connections.Count > 1)
+            {
+                // Relay to the other guests now, not at the end of the host's frame: the relay must add no frame wait.
                 foreach (var other in NetSession.Instance.Node.Connections)
                     if (other != c) other.Send((byte)Channel.Input, data, Delivery.Unreliable);
+                NetSession.Instance.FlushNow();
+            }
         }
 
         /// <summary>Track the clock offset (fastest arrival over 3 s) and jitter (90th percentile above it).</summary>
@@ -312,7 +333,7 @@ namespace GungeonOnline.Replication
             var list = new List<double>(s.Samples.Count);
             foreach (var kv in s.Samples) { if (kv.Value < min) min = kv.Value; list.Add(kv.Value); }
             list.Sort();
-            double p90 = list[(int)(list.Count * 0.9)];
+            double p90 = list[System.Math.Min(list.Count - 1, (int)(list.Count * bufPercentile))];
             s.BaseOffsetMs = min;
             s.JitterMs = p90 - min;
         }

@@ -7,7 +7,7 @@ namespace GungeonOnline.Net
     /// <summary>What a joining peer presents. Host rejects on any mismatch.</summary>
     public sealed class Handshake
     {
-        public const ushort ProtocolVersion = 3;
+        public const ushort ProtocolVersion = 4;
         public string ModVersion = "";
         public string GameHash = "";
         public string PlayerName = "";
@@ -23,7 +23,12 @@ namespace GungeonOnline.Net
     public sealed class NetNode : IDisposable
     {
         public readonly bool IsHost;
-        public readonly int MaxPlayers;
+        public int MaxPlayers { get; private set; }
+        /// <summary>Guest: the cap the host told us when it let us in.</summary>
+        public int HostMaxPlayers { get; private set; }
+
+        /// <summary>Host: change the cap while hosting; never below the players already in.</summary>
+        public void SetMaxPlayers(int n) => MaxPlayers = Math.Max(n, Connections.Count + 1);
         public readonly Handshake Local;
         public IDatagramSocket Socket { get; private set; }
         public readonly List<Connection> Connections = new List<Connection>();
@@ -42,6 +47,8 @@ namespace GungeonOnline.Net
         uint lastAttemptNonce;
         /// <summary>Datagram that is not part of any connection (STUN replies, punches). Return true if consumed.</summary>
         public Func<EndPoint, byte[], bool> RawHandler;
+        /// <summary>A guest-to-guest lane packet: (from, datagram, offset after the header).</summary>
+        public Action<EndPoint, byte[], int> LaneHandler;
 
         // Client-side connect state
         EndPoint hostEp;
@@ -143,7 +150,7 @@ namespace GungeonOnline.Net
                     if (!IsHost && Connecting && r.U32() == nonce)
                     {
                         LocalSlot = r.U8();
-                        r.U8(); // host max players
+                        HostMaxPlayers = r.U8();
                         Connecting = false;
                         var c = new Connection(from, 0) { LastReceiveTime = now, Session = nonce };
                         Connections.Add(c);
@@ -165,6 +172,9 @@ namespace GungeonOnline.Net
                     }
                 case PacketType.Punch:
                     RawHandler?.Invoke(from, data);
+                    break;
+                case PacketType.Lane:
+                    LaneHandler?.Invoke(from, data, 3);
                     break;
             }
         }

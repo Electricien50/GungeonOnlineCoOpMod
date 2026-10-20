@@ -30,7 +30,7 @@ namespace GungeonOnline.Game
             {
                 if (!NetSession.IsHost || !InRun) return;
                 var tagName = c.Tag as string;
-                away[c.Slot] = string.IsNullOrEmpty(tagName) || tagName == "Gungeoneer" ? "your friend" : tagName;
+                away[c.Slot] = string.IsNullOrEmpty(tagName) || tagName == "Gungeoneer" ? "a player" : tagName;
                 var p = PlayerSlots.ForSlot(c.Slot);
                 if (p) p.healthHaver.IsVulnerable = false;
                 RunBackup.SaveNow("friend dropped");
@@ -59,7 +59,7 @@ namespace GungeonOnline.Game
                 if (away.Count > 0 && !InRun) away.Clear();
                 return;
             }
-            string names = string.Join(" and ", new List<string>(away.Values).ToArray());
+            string names = Session.GungeonUI.NameList(new List<string>(away.Values));
             if (ContinueAlone)
             {
                 if (frozen) Unfreeze();

@@ -1,4 +1,4 @@
-ENTER THE GUNGEON ONLINE CO-OP MOD 1.0 (beta)
+ENTER THE GUNGEON ONLINE CO-OP MOD 1.1 (beta)
 
 INSTALL (close the game first, pick ONE way)
 
@@ -18,10 +18,11 @@ PLAY
 
   1. Pause and pick PLAY ONLINE (or hold Back + Start, or press F8).
   2. One player picks Host. The invite code is copied for you: send it.
-  3. The other player copies the code and picks Join.
-  4. Both pick a character in the Breach. The host walks into the Gungeon.
+     Playing with 3 or 4? Set "Players" on the Hosting screen first.
+  3. The others copy the code and pick Join.
+  4. Everyone picks a character in the Breach. The host walks into the Gungeon.
 
-  Both players need the same version of the mod.
+  Everyone needs the same version of the mod.
   Can't get in? Wait a few seconds: the mod opens a path through the host's
   router by itself. If it still fails, your reply code is copied: send it to
   the host, who picks Let in friend. Or swap who hosts.

@@ -51,6 +51,12 @@ namespace GungeonOnline.Replication
         public int TrackedCount => lastSent.Count;
         public int ReadyPeers => ready.Count;
         public bool IsReady(Connection c) => ready.Contains(c);
+
+        public bool IsSlotReady(int slot)
+        {
+            foreach (var c in ready) if (c.Slot == slot) return true;
+            return false;
+        }
         public bool DeathAnnounced(uint id) => deathSent.Contains(id);
         public bool IsReplica(uint id) => replicas.ContainsKey(id);
         public int SpawnsSent, DeathsSent, SpawnsApplied, DeathsApplied, SnapshotsApplied, LocalActorsSuppressed, SpawnFailures;

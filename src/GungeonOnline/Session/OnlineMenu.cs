@@ -214,6 +214,7 @@ namespace GungeonOnline.Session
                     info = s.InviteCodeText == null ? "Getting your invite code..." : null;
                     if (s.SteamReady) Add("Invite Steam friend", () => s.InviteSteamFriend());
                     AddStyleRow();
+                    AddCountRow();
                     Add("Copy code again", () => { if (s.InviteCodeText != null) { GUIUtility.systemCopyBuffer = s.InviteCodeText; Toasts.Show("Code copied"); } }, s.InviteCodeText != null);
                     var reply = ClipboardCode();
                     Add("Let in friend",
@@ -230,7 +231,7 @@ namespace GungeonOnline.Session
                     break;
                 case Screen.Session:
                     if (NetSession.IsHost && Game.AwayGuard.Instance != null && Game.AwayGuard.Instance.AnyoneAway)
-                        Add(Game.AwayGuard.Instance.ContinueAlone ? "Wait for my friend (pause the run)" : "Continue alone for now",
+                        Add(Game.AwayGuard.Instance.ContinueAlone ? "Wait for them (pause the run)" : "Continue without them for now",
                             () => Game.AwayGuard.Instance.ContinueAlone = !Game.AwayGuard.Instance.ContinueAlone);
                     if (!NetSession.IsHost && s.Node != null && s.Node.Connecting && s.InviteCodeText != null)
                         Add("Copy my reply code", () => { GUIUtility.systemCopyBuffer = s.InviteCodeText; Toasts.Show("Reply code copied. Send it to the host, and they pick Let in friend."); });
@@ -251,13 +252,13 @@ namespace GungeonOnline.Session
                 case Screen.ConfirmLeave:
                     info = !InRun ? "Leave this online game?"
                         : NetSession.IsHost ? "Leave the run? It is saved, and you can resume it later from this menu."
-                        : "Leave the run? Your friend can keep playing and you can rejoin.";
+                        : "Leave the run? The others can keep playing and you can rejoin.";
                     Add("Stay", () => Go(Screen.Session));
                     Add("Leave", () => { RunBackup.SaveNow("leaving"); s.Leave("left"); Close(); });
                     break;
                 case Screen.Settings:
                     Add("Gameplay", () => Go(Screen.SetGame));
-                    Add("Your friend", () => Go(Screen.SetFriend));
+                    Add("Your friends", () => Go(Screen.SetFriend));
                     Add("Display", () => Go(Screen.SetDisplay));
                     Add("Help and advanced", () => Go(Screen.SetHelp));
                     Add("Back", Back);
@@ -330,7 +331,7 @@ namespace GungeonOnline.Session
                 case Screen.Session: return "Playing online";
                 case Screen.Settings: return "Settings";
                 case Screen.SetGame: return "Gameplay";
-                case Screen.SetFriend: return "Your friend";
+                case Screen.SetFriend: return "Your friends";
                 case Screen.SetDisplay: return "Display";
                 case Screen.SetHelp: return "Help";
                 case Screen.ConfirmLeave: return "Leave?";
@@ -436,7 +437,7 @@ namespace GungeonOnline.Session
             float contentH = 26 * px;
             string router = screen == Screen.Host ? RouterLine(s) : "";
             if (screen == Screen.Host) contentH += 22 * px + 3 * px + small + (router.Length > 0 ? small : 0) + 8 * px;
-            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, s.Node != null ? s.Node.Connections.Count : 1)) + 8 * px;
+            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, NetSession.Active ? PlayerCount(s) - 1 : 1)) + 8 * px;
             if (!string.IsNullOrEmpty(info)) contentH += small * WrapCount(info) + 4 * px;
             if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) contentH += small * WrapCount(s.LastError) + 4 * px;
             contentH += row * entries.Count + (typing ? row + small : 0) + small + 10 * px;
@@ -580,6 +581,30 @@ namespace GungeonOnline.Session
             Add("Co-op style: " + StyleNames[NetConfig.CoopStyle.Value], () => NetConfig.CoopStyle.Value = (NetConfig.CoopStyle.Value + 1) % 2, true,
                 d => NetConfig.CoopStyle.Value = (NetConfig.CoopStyle.Value + d + 2) % 2);
         }
+        /// <summary>How many can play: the host picks 2, 3 or 4 (more only by editing the config, experimental).</summary>
+        void AddCountRow()
+        {
+            var s = NetSession.Instance;
+            if (NetSession.Active && !NetSession.IsHost)
+            {
+                int hm = Lobby.HostMaxPlayers > 0 ? Lobby.HostMaxPlayers : (s != null && s.Node != null ? s.Node.HostMaxPlayers : -1);
+                Add("Players: " + (hm > 0 ? hm.ToString() : "...") + " (host's choice)", null, false);
+                return;
+            }
+            int cur = NetConfig.MaxPlayers.Value;
+            Add("Players: " + cur, () => SetCount(cur + 1), true, d => SetCount(cur + d));
+        }
+
+        static void SetCount(int n)
+        {
+            n = n < 2 ? 4 : n > 4 ? 2 : n; // 2, 3, 4, round and round
+            var node = NetSession.Instance != null ? NetSession.Instance.Node : null;
+            int already = node != null ? node.Connections.Count + 1 : 1;
+            if (n < already) { Toasts.Show(already + " players are already in", 3f, true); n = already; }
+            NetConfig.MaxPlayers.Value = n;
+            if (node != null && NetSession.IsHost) node.SetMaxPlayers(n);
+        }
+
         static readonly string[] WarnNames = { "Off", "Top", "Top, faint", "Corner", "Corner, faint" };
         static readonly string[] SizeNames = { "Small", "Normal", "Large" };
 
@@ -626,18 +651,45 @@ namespace GungeonOnline.Session
             y += row;
             if (s.Node == null || s.Node.Connections.Count == 0)
             {
-                GungeonUI.TextCentered(NetSession.IsHost ? "Waiting for your friend..." : "Connecting...", cx, y + 3 * px, GungeonUI.Font.Small, Dim);
+                GungeonUI.TextCentered(NetSession.IsHost ? (NetConfig.MaxPlayers.Value > 2 ? "Waiting for your friends..." : "Waiting for your friend...") : "Connecting...", cx, y + 3 * px, GungeonUI.Font.Small, Dim);
                 return y + row;
             }
-            foreach (var c in s.Node.Connections)
+            // Every spot in the game: the host and each friend (with their link quality where we hold the link, or how
+            // their input reaches us when we don't), and the spots still open.
+            var lobby = UnityEngine.Object.FindObjectOfType<Lobby>();
+            int max = PlayerCount(s);
+            for (int slot = 0; slot < max; slot++)
             {
-                string q = Quality(c, out var col);
-                string who = c.Tag as string;
-                if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = GungeonUI.CharacterName(Game.PlayerSlots.ForSlot(c.Slot)) + (NetSession.IsHost ? "" : " - host");
-                DrawPlayerRow(Game.PlayerSlots.ForSlot(c.Slot), who, q + "  " + Mathf.RoundToInt(Shown(c)) + " ms", col, cx, y);
+                if (slot == NetSession.LocalSlot) continue;
+                Net.Connection c = null;
+                foreach (var k in s.Node.Connections) if (k.Slot == slot) c = k;
+                var p = Game.PlayerSlots.ForSlot(slot);
+                Lobby.Entry entry = null;
+                if (lobby != null) lobby.Roster.TryGetValue(slot, out entry);
+                if (c == null && p == null && entry == null)
+                {
+                    GungeonUI.TextCentered("Open spot", cx, y + 3 * px, GungeonUI.Font.Small, Dim);
+                    y += row;
+                    continue;
+                }
+                string who = c != null ? c.Tag as string : (entry != null ? entry.Name : null);
+                if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = GungeonUI.CharacterName(p);
+                if (slot == 0) who += " - host";
+                string right; Color col;
+                if (c != null) { string q = Quality(c, out col); right = q + "  " + Mathf.RoundToInt(Shown(c)) + " ms"; }
+                else { col = Dim; right = (PeerLanes.IsDirect(slot) ? "direct" : "via host") + "  "; }
+                DrawPlayerRow(p, who, right, col, cx, y);
                 y += row;
             }
             return y + 4 * px;
+        }
+
+        /// <summary>How many can play in this session: the host's cap, as the host knows it or as it told us.</summary>
+        static int PlayerCount(NetSession s)
+        {
+            if (NetSession.IsHost) return Mathf.Max(2, NetConfig.MaxPlayers.Value);
+            if (Lobby.HostMaxPlayers > 0) return Lobby.HostMaxPlayers;
+            return s.Node != null && s.Node.HostMaxPlayers > 0 ? s.Node.HostMaxPlayers : 2;
         }
 
         static void DrawPlayerRow(PlayerController p, string name, string right, Color rightColor, float cx, float y)
@@ -681,7 +733,10 @@ namespace GungeonOnline.Session
             {
                 string q = Quality(c, out var col);
                 if (q == "Great") continue;
-                string text = $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
+                // With several friends, say whose connection it is.
+                string text = s.Node.Connections.Count > 1
+                    ? $"{GungeonUI.WhoName(c)}: {q.ToLower()}, {Shown(c):F0} ms, {c.LossPercent:F0}% loss"
+                    : $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
                 col.a = alpha;
                 if (corner) GungeonUI.Text(text, new Vector2(8 * GungeonUI.Px, y), GungeonUI.Font.Small, col, scale);
                 else GungeonUI.TextCentered(text, UnityEngine.Screen.width / 2f, y, GungeonUI.Font.Small, col, scale);
@@ -726,7 +781,7 @@ namespace GungeonOnline.Session
                 var style = new GUIStyle(MenuStyle.Item);
                 style.normal.textColor = col;
                 string who = c.Tag as string;
-                if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = NetSession.IsHost ? "Your friend" : "Host";
+                if (string.IsNullOrEmpty(who) || who == "Gungeoneer") who = NetSession.IsHost ? "A player" : "Host";
                 GUI.Label(new Rect(x, y, w, lineH), $"{who}: connection {q} ({Shown(c):F0} ms)", style);
                 y += lineH * 0.9f;
             }

@@ -1,0 +1,234 @@
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+
+namespace GungeonOnline.Game.NPlayers
+{
+    /// <summary>
+    /// HUD panels for players 3 and 4, made from the game's own two. The game keeps lists of heart, blank, ammo and
+    /// item panels but only ever uses index 0 (player 1) and index 1 (everyone else). Extra players get clones of the
+    /// matching panel placed under it, and while the game updates "player 2's" panel for one of them, the clone
+    /// takes index 1's place for that call (a swap in, a swap back out). The floating "RELOAD" text stays with
+    /// players 1 and 2 only.
+    /// </summary>
+    internal static class HudPatches
+    {
+        static readonly System.Reflection.FieldInfo barsField = AccessTools.Field(typeof(GameUIRoot), "m_extantReloadBars");
+        static readonly System.Reflection.FieldInfo timersField = AccessTools.Field(typeof(GameUIRoot), "m_itemNameVisibilityTimers");
+        static readonly System.Reflection.FieldInfo markersField = AccessTools.Field(typeof(Minimap), "m_playerMarkers");
+        static readonly List<dfControl> clones = new List<dfControl>();
+
+        public static void Install(Harmony h)
+        {
+            h.Patch(AccessTools.Method(typeof(GameUIRoot), nameof(GameUIRoot.ConvertCoreUIToCoopMode)), postfix: new HarmonyMethod(typeof(HudPatches), nameof(ConvertPostfix)));
+            foreach (var name in new[] { nameof(GameUIRoot.UpdatePlayerHealthUI), nameof(GameUIRoot.UpdatePlayerBlankUI), nameof(GameUIRoot.UpdateGunData),
+                                         nameof(GameUIRoot.UpdateItemData), nameof(GameUIRoot.SetAmmoCountColor), nameof(GameUIRoot.DisableCoopPlayerUI),
+                                         nameof(GameUIRoot.ReenableCoopPlayerUI), nameof(GameUIRoot.GetReloadBarForPlayer) })
+                h.Patch(AccessTools.Method(typeof(GameUIRoot), name),
+                    prefix: new HarmonyMethod(typeof(HudPatches), nameof(SwapInPrefix)), postfix: new HarmonyMethod(typeof(HudPatches), nameof(SwapOutPostfix)));
+            h.Patch(AccessTools.Method(typeof(GameUIRoot), nameof(GameUIRoot.InformNeedsReload)), prefix: new HarmonyMethod(typeof(HudPatches), nameof(ReloadLabelPrefix)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), "BraveOnLevelWasLoaded"), postfix: new HarmonyMethod(typeof(HudPatches), nameof(LevelLoadedPostfix)));
+            h.Patch(AccessTools.Method(typeof(Minimap), nameof(Minimap.UpdatePlayerPositionExact)),
+                prefix: new HarmonyMethod(typeof(HudPatches), nameof(MarkerSwapPrefix)), postfix: new HarmonyMethod(typeof(HudPatches), nameof(MarkerSwapPostfix)));
+        }
+
+        static int ExtraId(PlayerController p) => p && p.PlayerIDX >= 2 ? p.PlayerIDX : -1;
+
+        // ---------- Making the panels ----------
+
+        static dfControl Clone(dfControl template, Vector3 shift, List<dfControl> made)
+        {
+            if (template == null) throw new System.Exception("no template panel");
+            var go = Object.Instantiate(template.gameObject);
+            go.name = template.gameObject.name + " (player " + (clones.Count / 7 + 3) + ")";
+            var c = go.GetComponent<dfControl>();
+            made.Add(c);
+            go.transform.parent = template.transform.parent;
+            // HUD panels sit straight under the UI manager (no parent control) or inside a panel: add to whichever.
+            if (template.Parent != null) template.Parent.AddControl(c);
+            else { var mgr = template.GetManager(); if (mgr != null) mgr.AddControl(c); }
+            c.RelativePosition = template.RelativePosition + shift;
+            // Anchors were copied from the template: capture them again at the new spot, or the next layout pass
+            // puts the clone back on top of the original.
+            c.ResetLayout(true, true);
+            c.IsVisible = template.IsVisible;
+            Plugin.Log.LogInfo($"HUD: {go.name} at {c.RelativePosition} (template {template.RelativePosition}, anchor {template.Anchor}, parent {(template.Parent ? template.Parent.name : "manager")})");
+            return c;
+        }
+
+        /// <summary>After the game lays out two players' HUD: make sure every player id has panels, then refresh.</summary>
+        static void ConvertPostfix(GameUIRoot __instance)
+        {
+            try { Extend(__instance); }
+            catch (System.Exception e) { Plugin.Log.LogWarning("HUD for players 3 and 4: " + e); }
+            Sync();
+        }
+
+        /// <summary>Harness (GO_HUD_TEST=1): make and show the extra panels in a solo game, to check their placement.</summary>
+        public static bool LayoutTest => System.Environment.GetEnvironmentVariable("GO_HUD_TEST") == "1";
+
+        public static void TestExtend()
+        {
+            if (!GameUIRoot.Instance) return;
+            try { Extend(GameUIRoot.Instance); } catch (System.Exception e) { Plugin.Log.LogWarning("HUD test: " + e); }
+            Sync();
+        }
+
+        static void Extend(GameUIRoot ui)
+        {
+            int want = LayoutTest ? 4 : Players.Count;
+            var bars = barsField.GetValue(ui) as List<GameUIReloadBarController>;
+            while (ui.heartControllers.Count < want && ui.heartControllers.Count >= 2)
+            {
+                int k = ui.heartControllers.Count;    // the new id
+                int side = k % 2;                     // 0 = under player 1 (left), 1 = under player 2 (right)
+                var made = new List<dfControl>();
+                try
+                {
+                    var hearts = ui.heartControllers[side].GetComponent<dfPanel>();
+                    var blanks = ui.blankControllers[side].GetComponent<dfPanel>();
+                    float top = Mathf.Min(hearts.RelativePosition.y, blanks.RelativePosition.y);
+                    float bottom = Mathf.Max(hearts.RelativePosition.y + hearts.Height, blanks.RelativePosition.y + blanks.Height);
+                    var down = new Vector3(0f, bottom - top + 6f, 0f);
+                    var heartClone = Clone(hearts, down, made).GetComponent<GameUIHeartController>();
+                    var blankClone = Clone(blanks, down, made).GetComponent<GameUIBlankController>();
+                    // In co-op the game draws player 1's gun box with ammo panel 1 and player 2's with panel 0.
+                    // The weapon and item panels are tall, bottom-anchored strips: stack by the gun box's own height.
+                    var ammoCtl = ui.ammoControllers[side == 0 ? 1 : 0];
+                    var ammo = ammoCtl.GetComponent<dfPanel>();
+                    float boxH = ammoCtl.GunBoxSprite ? ammoCtl.GunBoxSprite.Height : 64f;
+                    var up = new Vector3(0f, -(boxH + 8f), 0f);
+                    var ammoClone = Clone(ammo, up, made).GetComponent<GameUIAmmoController>();
+                    var gunLabel = (dfLabel)Clone(ui.gunNameLabels[side == 0 ? 1 : 0], up, made);
+                    var item = ui.itemControllers[side].GetComponent<dfPanel>();
+                    var itemClone = Clone(item, up, made).GetComponent<GameUIItemController>();
+                    var itemLabel = (dfLabel)Clone(ui.itemNameLabels[side], up, made);
+                    GameUIReloadBarController bar = null;
+                    if (bars != null && ui.p_secondaryPlayerReloadBar)
+                        bar = Clone(ui.p_secondaryPlayerReloadBar.GetComponent<dfControl>(), Vector3.zero, made).GetComponent<GameUIReloadBarController>();
+                    if (!heartClone || !blankClone || !ammoClone || !itemClone) throw new System.Exception("a clone lost its controller");
+                    // Everything was made: now it becomes player k's HUD.
+                    ui.heartControllers.Add(heartClone); ui.blankControllers.Add(blankClone);
+                    ui.ammoControllers.Add(ammoClone); ui.gunNameLabels.Add(gunLabel);
+                    ui.itemControllers.Add(itemClone); ui.itemNameLabels.Add(itemLabel);
+                    var timers = timersField.GetValue(ui);
+                    if (timers is float[] arr && arr.Length <= k) { var bigger = new float[k + 1]; arr.CopyTo(bigger, 0); timersField.SetValue(ui, bigger); }
+                    else if (timers is List<float> list) while (list.Count <= k) list.Add(0f);
+                    if (bar != null) { if (bars.Count > k) bars[k] = bar; else bars.Add(bar); }
+                    clones.AddRange(made);
+                    Plugin.Log.LogInfo("HUD: panels made for player id " + k);
+                }
+                catch
+                {
+                    foreach (var c in made) if (c) Object.Destroy(c.gameObject);
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>Extra panels show only while that player is in and off the Breach.</summary>
+        public static void Sync()
+        {
+            var ui = GameUIRoot.Instance;
+            if (!ui || ui.heartControllers == null) return;
+            bool onFloor = GameManager.HasInstance && GameManager.Instance.CurrentLevelOverrideState != GameManager.LevelOverrideState.FOYER;
+            for (int k = 2; k < ui.heartControllers.Count; k++)
+            {
+                bool present = LayoutTest;
+                foreach (var p in Players.All) if (p.PlayerIDX == k) present = true;
+                bool show = present && onFloor;
+                ui.heartControllers[k].GetComponent<dfPanel>().IsVisible = show;
+                ui.blankControllers[k].GetComponent<dfPanel>().IsVisible = show;
+                if (k < ui.ammoControllers.Count) { var a = ui.ammoControllers[k].GetComponent<dfPanel>(); a.IsVisible = show; a.IsEnabled = show; }
+                if (k < ui.itemControllers.Count) ui.itemControllers[k].GetComponent<dfPanel>().IsVisible = show;
+                if (k < ui.gunNameLabels.Count && !show) ui.gunNameLabels[k].IsVisible = false;
+                if (k < ui.itemNameLabels.Count && !show) ui.itemNameLabels[k].IsVisible = false;
+            }
+        }
+
+        // ---------- Routing the game's updates to the right panel ----------
+
+        static void SwapLists(GameUIRoot ui, int k)
+        {
+            if (k >= ui.heartControllers.Count) return;
+            Swap(ui.heartControllers, 1, k); Swap(ui.blankControllers, 1, k);
+            Swap(ui.ammoControllers, 0, k); Swap(ui.gunNameLabels, 0, k);
+            Swap(ui.itemControllers, 1, k); Swap(ui.itemNameLabels, 1, k);
+            var bars = barsField.GetValue(ui) as List<GameUIReloadBarController>;
+            if (bars != null) Swap(bars, 1, k);
+            var timers = timersField.GetValue(ui);
+            if (timers is float[] arr && arr.Length > k) { var t = arr[1]; arr[1] = arr[k]; arr[k] = t; }
+            else if (timers is List<float> list) Swap(list, 1, k);
+        }
+
+        static void Swap<T>(List<T> list, int a, int b)
+        {
+            if (list == null || a >= list.Count || b >= list.Count) return;
+            var t = list[a]; list[a] = list[b]; list[b] = t;
+        }
+
+        /// <summary>The player argument, wherever the patched method keeps it.</summary>
+        static PlayerController PlayerArg(object[] args)
+        {
+            if (args != null) foreach (var a in args) if (a is PlayerController pc) return pc;
+            return null;
+        }
+
+        static void SwapInPrefix(GameUIRoot __instance, object[] __args, out int __state)
+        {
+            __state = -1;
+            if (!Players.NPlus) return;
+            int k = ExtraId(PlayerArg(__args));
+            if (k < 2 || k >= __instance.heartControllers.Count) return;
+            SwapLists(__instance, k);
+            __state = k;
+        }
+
+        static void SwapOutPostfix(GameUIRoot __instance, int __state)
+        {
+            if (__state >= 2) SwapLists(__instance, __state);
+        }
+
+        /// <summary>On a new floor the game refreshes player 2's HUD from player 1; refresh players 3 and 4 too.</summary>
+        static void LevelLoadedPostfix(PlayerController __instance)
+        {
+            if (!Players.NPlus || !__instance.IsPrimaryPlayer || !GameUIRoot.Instance) return;
+            var ui = GameUIRoot.Instance;
+            foreach (var p in Players.All)
+            {
+                if (p.PlayerIDX < 2 || p.inventory == null) continue;
+                try
+                {
+                    ui.UpdateGunData(p.inventory, 0, p);
+                    ui.UpdateItemData(p, p.CurrentItem, p.activeItems);
+                    if (p.healthHaver) ui.UpdatePlayerHealthUI(p, p.healthHaver);
+                    ui.UpdatePlayerBlankUI(p);
+                }
+                catch (System.Exception e) { Plugin.Log.LogWarning("HUD refresh for player " + p.PlayerIDX + ": " + e.Message); }
+            }
+            Sync();
+        }
+
+        /// <summary>The floating "RELOAD" text is tied to the game's two label slots: skip it for players 3 and 4.</summary>
+        static bool ReloadLabelPrefix(PlayerController attachPlayer) => !(Players.NPlus && ExtraId(attachPlayer) >= 2);
+
+        static void MarkerSwapPrefix(Minimap __instance, PlayerController player, out int __state)
+        {
+            __state = -1;
+            if (!Players.NPlus) return;
+            int k = ExtraId(player);
+            var markers = markersField.GetValue(__instance) as System.Collections.IList;
+            if (k < 2 || markers == null || k >= markers.Count) return;
+            var t = markers[1]; markers[1] = markers[k]; markers[k] = t;
+            __state = k;
+        }
+
+        static void MarkerSwapPostfix(Minimap __instance, int __state)
+        {
+            if (__state < 2) return;
+            var markers = markersField.GetValue(__instance) as System.Collections.IList;
+            if (markers == null || __state >= markers.Count) return;
+            var t = markers[1]; markers[1] = markers[__state]; markers[__state] = t;
+        }
+    }
+}

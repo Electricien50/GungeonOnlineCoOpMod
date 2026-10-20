@@ -244,7 +244,7 @@ namespace GungeonOnline.Session
             foreach (var p in b.Players)
                 if (p.Id == NetConfig.PlayerId.Value && GameManager.Instance.PrimaryPlayer == null && Instance != null)
                     Instance.StartCoroutine(CharacterPicker.Pick(p.Prefab));
-            Toasts.Show($"Saved run ready (floor {b.FloorIndex}). Your friend joins, then walk into the Gungeon.", 8f);
+            Toasts.Show($"Saved run ready (floor {b.FloorIndex}). Once everyone has joined, walk into the Gungeon.", 8f);
         }
 
         void RestoreHost()
@@ -287,7 +287,7 @@ namespace GungeonOnline.Session
                     all = false;
                     var pc = PlayerSlots.ForSlot(p.Slot);
                     var ws = Replication.WorldSync.Instance;
-                    if (pc && p.Slot != NetSession.LocalSlot && ws != null && ws.ReadyPeers > 0)
+                    if (pc && p.Slot != NetSession.LocalSlot && ws != null && ws.IsSlotReady(p.Slot))
                     {
                         Apply(pc, p);
                         restoredSlots.Add(p.Slot);

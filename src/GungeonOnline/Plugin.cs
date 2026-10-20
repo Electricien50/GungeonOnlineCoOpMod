@@ -9,7 +9,7 @@ namespace GungeonOnline
     {
         public const string Guid = "gungeononline";
         public const string Name = "Enter The Gungeon Online Co-Op Mod";
-        public const string Version = "1.0.6";
+        public const string Version = "1.1.0";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;
@@ -33,6 +33,19 @@ namespace GungeonOnline
             Replication.WorldSync.Install(harmony);
             Replication.ProjectileSync.Install(harmony);
             Game.CouchCoop.Install(harmony);
+            TryInstall("PlayerListPatches", () => Game.NPlayers.PlayerListPatches.Install(harmony));
+            TryInstall("DeathRevivePatches", () => Game.NPlayers.DeathRevivePatches.Install(harmony));
+            TryInstall("RoomPresencePatches", () => Game.NPlayers.RoomPresencePatches.Install(harmony));
+            TryInstall("GatherPatches", () => Game.NPlayers.GatherPatches.Install(harmony));
+            TryInstall("StatsPatches", () => Game.NPlayers.StatsPatches.Install(harmony));
+            TryInstall("HudPatches", () => Game.NPlayers.HudPatches.Install(harmony));
+            if (Dev.DevEnv.IsHarness)
+            {
+                // Tests never make a sound: silent from the first frame, and the game's audio wake-up does nothing.
+                UnityEngine.AudioListener.volume = 0f;
+                var wake = AccessTools.Method(typeof(AkSoundEngine), "WakeupFromSuspend");
+                if (wake != null) harmony.Patch(wake, prefix: new HarmonyMethod(typeof(Plugin), nameof(NoWake)));
+            }
             Replication.VitalsSync.Install(harmony);
             Replication.PickupSync.Install(harmony);
             Replication.ShopSync.Install(harmony);
@@ -65,6 +78,7 @@ namespace GungeonOnline
             gameObject.AddComponent<Replication.ShopSync>();
             gameObject.AddComponent<Replication.Checksum>();
             gameObject.AddComponent<Replication.PropSync>();
+            gameObject.AddComponent<Session.PeerLanes>();
             gameObject.AddComponent<Dev.DevRunner>();
             StartCoroutine(Dev.QuickStart.Run());
             Dev.AutoSession.Begin();
@@ -73,6 +87,15 @@ namespace GungeonOnline
         }
 
         /// <summary>Run over (everyone dead): the saved run is finished and is not offered for resuming.</summary>
+        static bool NoWake() => false;
+
+        /// <summary>One bad patch must never take the whole mod down: log it and keep the rest.</summary>
+        static void TryInstall(string what, System.Action install)
+        {
+            try { install(); }
+            catch (System.Exception e) { Log.LogError(what + " patches failed to install: " + e.Message); }
+        }
+
         static void OnGameOver()
         {
             Plugin.Log.LogInfo("Game over (everyone is down)");
