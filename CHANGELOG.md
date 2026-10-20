@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.5
+
+**Fixes**
+- Keyboard and mouse now work online. With two players the game turned keyboard and mouse off for player one, so keyboard players could not move or pause once a run started.
+- Typing an invite code and pressing Enter now joins. Before, Enter did nothing in the code box; a code that is not valid now says so.
+
+**Improvements**
+- Lower input delay. Your friend's presses are now timed by when they actually arrive instead of by the next frame that happens to read them, so their character reacts sooner, on every frame rate and connection. Measured press to use: about 50 ms down to 20 ms on the same network, 47 to 29 ms at 25 ms ping, 76 to 57 ms at 70 ms ping.
+- Your friend's character no longer drifts out of place or gets snapped back. Every input your friend's game sends now says exactly where their character was, and your game puts it there, so both screens always agree on where everyone stands without any small corrections.
+- When the host's game moves a player on purpose (the Classic pull into a fight, a warp, a boss intro), that player's own game now makes the same move.
+- If your friend's connection pauses, their character now stands still until it comes back instead of running on with the last button held.
+
 ## 1.0.4
 
 **Fixes**

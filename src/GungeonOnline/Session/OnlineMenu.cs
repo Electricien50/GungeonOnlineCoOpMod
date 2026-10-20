@@ -59,6 +59,9 @@ namespace GungeonOnline.Session
         }
         int pendingRow = -1;
 
+        /// <summary>Harness (GO_TYPE_AT): open the Join screen's code box, as if the player picked Type the code.</summary>
+        public void StartTypingForTest() { Open(); Go(Screen.Join); typing = true; typedCode = ""; }
+
         public void OpenLeave()
         {
             Open();
@@ -397,18 +400,13 @@ namespace GungeonOnline.Session
 
             if (typing)
             {
+                // Enter and Esc first: the text field below uses them up, so a check after it never sees them.
+                if (CodeKeys(s)) return;
                 GUI.SetNextControlName("go_code");
                 typedCode = GUI.TextField(new Rect(x, y, w, lineH * 0.9f), typedCode, 40, MenuStyle.Item);
                 GUI.FocusControl("go_code");
                 y += lineH;
                 GUI.Label(new Rect(x, y, w, lineH), "Type the code and press Enter. Esc cancels.", MenuStyle.Small);
-                var e = Event.current;
-                if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
-                {
-                    typing = false;
-                    if (InviteCode.TryParse(typedCode, out _)) s.Join(typedCode); else Toasts.Show("That code is not valid", 3f, true);
-                }
-                if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape) typing = false;
             }
 
             GUI.Label(new Rect(x, UnityEngine.Screen.height * 0.16f + h - lineH * 1.6f, w, lineH),
@@ -530,26 +528,42 @@ namespace GungeonOnline.Session
 
             if (typing)
             {
+                // Enter and Esc first: the text field below uses them up, so a check after it never sees them.
+                if (CodeKeys(s)) return;
                 GUI.SetNextControlName("go_code");
                 var field = new GUIStyle(GUIStyle.none);
                 field.normal.textColor = Color.clear;
+                var cursor = GUI.skin.settings.cursorColor;
+                GUI.skin.settings.cursorColor = Color.clear;
                 typedCode = GUI.TextField(new Rect(x + 12 * px, cy, w - 24 * px, row), typedCode, 40, field);
+                GUI.skin.settings.cursorColor = cursor;
                 GUI.FocusControl("go_code");
                 GungeonUI.Frame("weapon_box_01", new Rect(x + 16 * px, cy - 3 * px, w - 32 * px, row + 2 * px), new Color(1, 1, 1, 0.9f));
                 bool blink = Mathf.Repeat(Time.unscaledTime, 1f) < 0.55f;
                 GungeonUI.TextCentered((typedCode ?? "") + (blink ? "_" : " "), cx, cy, GungeonUI.Font.Menu, GungeonUI.Gold);
                 cy += row + 2 * px;
                 GungeonUI.TextCentered("Type the code and press Enter. Esc cancels.", cx, cy, GungeonUI.Font.Small, Dim);
-                var e = Event.current;
-                if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
-                {
-                    typing = false;
-                    if (InviteCode.TryParse(typedCode, out _)) s.Join(typedCode); else Toasts.Show("That code is not valid", 3f, true);
-                }
-                if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape) typing = false;
             }
 
             GungeonUI.TextCentered("A choose    B back    < > change", cx, y + h - 14 * px, GungeonUI.Font.Small, Dim);
+        }
+
+        /// <summary>Typing a code: Enter joins (or says the code is not valid), Esc cancels. True when typing ended.</summary>
+        bool CodeKeys(NetSession s)
+        {
+            var e = Event.current;
+            if (e.type != EventType.KeyDown) return false;
+            if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+            {
+                e.Use();
+                typing = false;
+                if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"CODE entered \"{typedCode}\" valid={InviteCode.TryParse(typedCode, out _)}");
+                if (InviteCode.TryParse(typedCode, out _)) s.Join(typedCode);
+                else Toasts.Show("That code is not valid. Codes look like ABCD-EFGH-JKLM.", 4f, true);
+                return true;
+            }
+            if (e.keyCode == KeyCode.Escape) { e.Use(); typing = false; return true; }
+            return false;
         }
 
         static readonly string[] StyleNames = { "Classic", "Explore" };

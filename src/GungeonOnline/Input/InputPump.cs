@@ -96,6 +96,7 @@ namespace GungeonOnline.Input
                 var lb = BraveInput.GetInstanceForPlayer(id);
                 var la = lb != null ? lb.ActiveActions : null;
                 if (la != null && la.Device is NetInputDevice) la.Device = InputManager.ActiveDevice;
+                if (la != null && Session.NetSession.Active) KeepKeyboard(la);
             }
             foreach (var kv in devices)
             {
@@ -110,6 +111,25 @@ namespace GungeonOnline.Input
                 }
                 if (actions.Device != kv.Value) actions.Device = kv.Value;
                 if (actions.ForceDisable) actions.ForceDisable = false;
+            }
+        }
+
+        static readonly AccessTools.FieldRef<PlayerAction, List<BindingSourceType>> ignored =
+            AccessTools.FieldRefAccess<PlayerAction, List<BindingSourceType>>("m_ignoredBindingSources");
+
+        /// <summary>
+        /// With two players the game turns off keyboard and mouse for player one whenever player two has no controller
+        /// yet (BraveInput.ReassignAllControllers, couch co-op rules). Online, player two is the friend's copy, so
+        /// keyboard players could not move or pause at all. Your own player always keeps keyboard and mouse.
+        /// </summary>
+        static void KeepKeyboard(GungeonActions a)
+        {
+            var list = a.Actions;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var ig = ignored(list[i]);
+                if (ig == null || ig.Count == 0) continue;
+                ig.RemoveAll(t => t == BindingSourceType.KeyBindingSource || t == BindingSourceType.MouseBindingSource);
             }
         }
 

@@ -82,6 +82,8 @@ namespace GungeonOnline.Net
 
         /// <summary>Drain the socket and process everything that arrived. Call right before the sim step.</summary>
         double lastPoll = -1;
+        /// <summary>Real arrival time (session clock) of the datagram whose handlers are running now.</summary>
+        public double CurrentArrival { get; private set; }
 
         public void Poll(double now)
         {
@@ -91,6 +93,7 @@ namespace GungeonOnline.Net
             lastPoll = now;
             while (Socket.TryReceive(out var from, out var data))
             {
+                CurrentArrival = now - Socket.LastArrivalAge;
                 try { Handle(from, data, now); }
                 catch (WireException) { /* malformed datagram: drop */ }
             }

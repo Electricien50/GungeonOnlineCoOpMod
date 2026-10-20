@@ -29,7 +29,13 @@ namespace GungeonOnline.Replication
             public int Slot;
             public uint NewestSeq, AppliedSeq;
             public InputFrame Last;
-            public readonly SortedDictionary<uint, KeyValuePair<uint, InputFrame>> Pending = new SortedDictionary<uint, KeyValuePair<uint, InputFrame>>();
+            public readonly SortedDictionary<uint, Frame> Pending = new SortedDictionary<uint, Frame>();
+            // The applied frame's owner position, for PlayerSync to put the copy there this frame.
+            public bool PlaceNow;
+            public Vector2 PlacePos;
+            public byte PlaceEpoch;
+            public byte PlaceState;
+            public uint LastFreshMs;
             // Clock mapping: sample = localArrivalMs - remoteMs. Min over a window = fastest path; spread = jitter.
             public readonly Queue<KeyValuePair<double, double>> Samples = new Queue<KeyValuePair<double, double>>();
             public double BaseOffsetMs = double.NaN;
@@ -37,9 +43,55 @@ namespace GungeonOnline.Replication
             public double BufferMs;
             public int Starved, Merged, Applied;
             public double LastLateMs; // how long the applied frame waited after it was due
+            public double PollLagMs;  // average time a packet sat waiting for the frame to start (not counted as jitter)
+            // Tests only: the sender's high-resolution clock for each frame, and the measured press-to-use delays.
+            public readonly long[] SentQpc = new long[256];
+            public readonly uint[] SentQpcSeq = new uint[256];
+            public readonly List<double> E2e = new List<double>();
+
         }
 
+        public struct Frame
+        {
+            public uint Time;     // sender clock
+            public InputFrame Input;
+            public Vector2 Pos;   // where the sender's player was when this frame began
+            public byte Epoch;    // how many host-ordered moves the sender had made by then
+            public byte State;    // StateFalling | StateCart, as the sender's player was then
+        }
+
+        /// <summary>Host-ordered moves our own player has made (PlayerSync); every frame we send carries it.</summary>
+        public byte MoveEpoch;
+        readonly Vector2[] localPos = new Vector2[256];
+        readonly byte[] localEpoch = new byte[256];
+        readonly byte[] localState = new byte[256];
+        public const byte StateFalling = 1, StateCart = 2;
+
+        /// <summary>Owner silent this long: the copy stands still instead of running on with the last input.</summary>
+        const uint StillAfterMs = 250;
+
         public readonly Dictionary<int, Stream> Streams = new Dictionary<int, Stream>();
+
+        // Tests only. GO_MEASURE_E2E=1: each input packet also carries the sender's high-resolution clock for its newest
+        // frame; both test games run on one PC and share that clock, so the receiver measures the true delay from a
+        // press on the sender to the frame that uses it here. GO_INPUT_CLOCK=poll forces the 1.0 timing everywhere.
+        static readonly bool measureE2E = System.Environment.GetEnvironmentVariable("GO_MEASURE_E2E") == "1";
+        static readonly bool pollClock = System.Environment.GetEnvironmentVariable("GO_INPUT_CLOCK") == "poll";
+        public static bool PollClock => pollClock;
+        readonly long[] localQpc = new long[256];
+
+        /// <summary>Tests: mean and 95th percentile of the measured press-to-use delay for a stream (ms).</summary>
+        public static string E2eText(Stream s)
+        {
+            if (s.E2e.Count == 0) return "";
+            var copy = new List<double>(s.E2e);
+            copy.Sort();
+            double sum = 0;
+            foreach (var x in copy) sum += x;
+            return $" e2e={sum / copy.Count:F1}ms e2e95={copy[(int)(copy.Count * 0.95)]:F1}ms";
+        }
+
+
         readonly WireWriter w = new WireWriter(512);
 
         static uint NowMs => (uint)(Time.realtimeSinceStartup * 1000.0);
@@ -54,13 +106,13 @@ namespace GungeonOnline.Replication
         void Start()
         {
             NetSession.Instance.On(Channel.Input, OnInput);
-            NetSession.Instance.SessionEnded += () => { Streams.Clear(); LocalSeq = 0; };
+            NetSession.Instance.SessionEnded += () => { Streams.Clear(); LocalSeq = 0; MoveEpoch = 0; };
             NetSession.Instance.PeerLeft += (c, why) => Streams.Remove(c.Slot);
             // A (re)connected peer may have restarted and count from zero again: start their streams fresh.
             NetSession.Instance.PeerJoined += c =>
             {
                 if (NetSession.IsHost) Streams.Remove(c.Slot);
-                else Streams.Clear();
+                else { Streams.Clear(); MoveEpoch = 0; }
             };
         }
 
@@ -88,7 +140,9 @@ namespace GungeonOnline.Replication
                 var p = kv.Value;
                 if (!p) continue;
                 var dev = InputPump.Route(p.PlayerIDX);
-                dev.Frame = Next(Get(kv.Key));
+                var st = Get(kv.Key);
+                dev.Frame = Next(st);
+                PlayerSync.Instance?.Place(kv.Key, p, st); // exactly where its owner was when this input began
             }
         }
 
@@ -105,20 +159,37 @@ namespace GungeonOnline.Replication
             uint prevButtons = s.Last.Buttons, edges = 0;
             InputFrame chosen = s.Last;
             uint chosenSeq = s.AppliedSeq, chosenTime = 0;
+            Vector2 chosenPos = default(Vector2);
+            byte chosenEpoch = 0, chosenState = 0;
             int n = 0;
             var used = new List<uint>();
             foreach (var kv in s.Pending)
             {
-                if (kv.Value.Key > dueRemote) break;
-                edges |= kv.Value.Value.Buttons & ~prevButtons;
-                prevButtons = kv.Value.Value.Buttons;
-                chosen = kv.Value.Value;
+                if (kv.Value.Time > dueRemote) break;
+                edges |= kv.Value.Input.Buttons & ~prevButtons;
+                prevButtons = kv.Value.Input.Buttons;
+                chosen = kv.Value.Input;
                 chosenSeq = kv.Key;
-                chosenTime = kv.Value.Key;
+                chosenTime = kv.Value.Time;
+                chosenPos = kv.Value.Pos;
+                chosenEpoch = kv.Value.Epoch;
+                chosenState = kv.Value.State;
                 used.Add(kv.Key);
                 n++;
             }
-            if (n == 0) { if (s.Applied > 0) s.Starved++; return s.Last; }
+            if (n == 0)
+            {
+                if (s.Applied > 0) s.Starved++;
+                // The owner has gone quiet (a stall, a loading screen): stand still instead of running on.
+                if (s.Applied > 0 && NowMs - s.LastFreshMs > StillAfterMs) { var still = s.Last; still.MoveX = 0; still.MoveY = 0; still.Buttons = 0; return still; }
+                return s.Last;
+            }
+            s.PlaceNow = true;
+            s.PlacePos = chosenPos;
+            s.PlaceEpoch = chosenEpoch;
+            s.PlaceState = chosenState;
+            if (measureE2E && s.SentQpcSeq[chosenSeq & 255] == chosenSeq && s.E2e.Count < 50000)
+                s.E2e.Add((System.Diagnostics.Stopwatch.GetTimestamp() - s.SentQpc[chosenSeq & 255]) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
             foreach (var k in used) s.Pending.Remove(k);
             if (n > 1) s.Merged += n - 1;
             s.LastLateMs = dueRemote - chosenTime;
@@ -147,6 +218,10 @@ namespace GungeonOnline.Replication
             LocalSeq++;
             localHistory[LocalSeq & 255] = f;
             localTimeMs[LocalSeq & 255] = NowMs;
+            localPos[LocalSeq & 255] = local.transform.position; // where this frame begins: the end of the last one
+            localEpoch[LocalSeq & 255] = MoveEpoch;
+            localState[LocalSeq & 255] = (byte)((local.IsFalling ? StateFalling : 0) | (local.currentMineCart ? StateCart : 0));
+            localQpc[LocalSeq & 255] = System.Diagnostics.Stopwatch.GetTimestamp();
             WriteStream(NetSession.LocalSlot, LocalSeq);
             NetSession.Instance.Node.Broadcast((byte)Channel.Input, w.ToArray(), Delivery.Unreliable);
             NetSession.Instance.FlushNow(); // out the door this frame
@@ -161,7 +236,7 @@ namespace GungeonOnline.Replication
             w.U32(newestTime);
             int count = (int)System.Math.Min(newest, Redundancy);
             w.U8((byte)count);
-            using (var ms = new System.IO.MemoryStream(count * (InputFrame.WireSize + 2)))
+            using (var ms = new System.IO.MemoryStream(count * (InputFrame.WireSize + 12)))
             using (var bw = new System.IO.BinaryWriter(ms))
             {
                 for (int i = 0; i < count; i++)
@@ -169,11 +244,16 @@ namespace GungeonOnline.Replication
                     uint seq = newest - (uint)i;
                     bw.Write((ushort)System.Math.Min(65535u, newestTime - localTimeMs[seq & 255]));
                     localHistory[seq & 255].Write(bw);
+                    bw.Write(localPos[seq & 255].x);
+                    bw.Write(localPos[seq & 255].y);
+                    bw.Write(localEpoch[seq & 255]);
+                    bw.Write(localState[seq & 255]);
                 }
                 bw.Flush();
                 var b = ms.ToArray();
                 w.Bytes(b, 0, b.Length);
             }
+            if (measureE2E) w.U64((ulong)localQpc[newest & 255]);
         }
 
         void OnInput(Connection c, byte[] data, Delivery d)
@@ -187,7 +267,14 @@ namespace GungeonOnline.Replication
             if (slot == NetSession.LocalSlot) return;
             var s = Get(slot);
             double now = NowMs;
-            Observe(s, now, newestTime, newest > s.NewestSeq);
+            bool fresh = newest > s.NewestSeq;
+            if (fresh) s.LastFreshMs = NowMs;
+            // The packet's real arrival, not the start of the frame that drained it: the wait for our frame is not the
+            // network's jitter and must not widen the playout buffer.
+            double arrival = NetSession.Instance.Node != null && NetSession.Instance.Node.CurrentArrival > 0 ? NetSession.Instance.Node.CurrentArrival * 1000.0 : now;
+            s.PollLagMs = s.PollLagMs * 0.95 + (now - arrival) * 0.05;
+            if (!pollClock) now = arrival;
+            Observe(s, now, newestTime, fresh);
             using (var ms = new System.IO.MemoryStream(data, r.Pos, data.Length - r.Pos))
             using (var br = new System.IO.BinaryReader(ms))
             {
@@ -196,8 +283,16 @@ namespace GungeonOnline.Replication
                     uint seq = newest - (uint)i;
                     uint t = newestTime - br.ReadUInt16();
                     var f = InputFrame.Read(br);
+                    var pos = new Vector2(br.ReadSingle(), br.ReadSingle());
+                    byte epoch = br.ReadByte();
+                    byte state = br.ReadByte();
                     if (seq <= s.AppliedSeq || s.Pending.ContainsKey(seq)) continue;
-                    s.Pending[seq] = new KeyValuePair<uint, InputFrame>(t, f);
+                    s.Pending[seq] = new Frame { Time = t, Input = f, Pos = pos, Epoch = epoch, State = state };
+                }
+                if (measureE2E && ms.Length - ms.Position >= 8)
+                {
+                    s.SentQpc[newest & 255] = (long)br.ReadUInt64();
+                    s.SentQpcSeq[newest & 255] = newest;
                 }
             }
             if (newest > s.NewestSeq) s.NewestSeq = newest;

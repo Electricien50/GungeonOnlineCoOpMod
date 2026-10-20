@@ -40,6 +40,7 @@ namespace GungeonOnline.Session
         }
 
         public EndPoint LocalEndPoint => new SteamEndPoint(SteamUser.GetSteamID());
+        public double LastArrivalAge => 0;
 
         public void SendTo(EndPoint to, byte[] data, int len)
         {

@@ -265,11 +265,22 @@ namespace GungeonOnline.Dev
             HarmonyLib.AccessTools.Method(typeof(FoyerGungeonDoor), "OnTriggered").Invoke(door, new object[] { Game.PlayerSlots.Local.specRigidbody, door.specRigidbody, null });
         }
 
+        bool typeDone;
         bool menuDone, pauseDone, pauseClosed;
 
         void UiHooks(float t)
         {
+            // Real keys (the key test sends Windows key messages): what Unity and the game's input see.
+            if (DevEnv.IsHarness) foreach (var k in new[] { KeyCode.D, KeyCode.A, KeyCode.Escape })
+                if (UnityEngine.Input.GetKeyDown(k))
+                {
+                    var p0 = GameManager.HasInstance ? GameManager.Instance.PrimaryPlayer : null;
+                    var bi = p0 ? BraveInput.GetInstanceForPlayer(p0.PlayerIDX) : null;
+                    Plugin.Log.LogInfo($"KEY {k} down; game move={(bi != null && bi.ActiveActions != null ? bi.ActiveActions.Move.Vector.ToString() : "-")} device={(bi != null && bi.ActiveActions != null && bi.ActiveActions.Device != null ? bi.ActiveActions.Device.Name : "-")} last={InControl.InputManager.ActiveDevice?.Name}");
+                }
             float m = EnvSec("GO_MENU_AT"), p = EnvSec("GO_PAUSE_AT");
+            float ty = EnvSec("GO_TYPE_AT");
+            if (!typeDone && ty > 0 && t >= ty) { typeDone = true; Session.OnlineMenu.Instance?.StartTypingForTest(); Plugin.Log.LogInfo("Harness: typing a code"); }
             if (!menuDone && m > 0 && t >= m) { menuDone = true; Session.OnlineMenu.Instance?.Open(); Plugin.Log.LogInfo("Harness: online menu opened"); }
             if (menuDone && m > 0 && t >= m + 4 && Session.OnlineMenu.IsOpen) Session.OnlineMenu.Instance.Close();
             if (!pauseDone && p > 0 && t >= p && GameManager.Instance.PrimaryPlayer != null) { pauseDone = true; GameManager.Instance.Pause(); Plugin.Log.LogInfo("Harness: pause menu opened"); }
@@ -661,7 +672,7 @@ namespace GungeonOnline.Dev
                         string rp = kv.Value ? kv.Value.transform.position.ToString("F2") : "dead";
                         net += $" remote{kv.Key}={rp}";
                         if (Replication.InputSync.Instance.Streams.TryGetValue(kv.Key, out var st))
-                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms last={st.Last}]";
+                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms lag={st.PollLagMs:F1}ms{Replication.InputSync.E2eText(st)} clock={(Replication.InputSync.PollClock ? "frame" : "arrival")} last={st.Last}]";
                         if (kv.Value)
                         {
                             var bi = BraveInput.GetInstanceForPlayer(kv.Value.PlayerIDX);

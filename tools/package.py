@@ -1,10 +1,10 @@
-"""Builds dist/GungeonOnline-1.0.4.zip: double-click installer + files/ payload (BepInEx + plugin) + how-to-play.
+"""Builds dist/GungeonOnline-1.0.5.zip: double-click installer + files/ payload (BepInEx + plugin) + how-to-play.
 Same zip for Steam, GOG and Epic. Uses forward-slash paths so every unzip tool reads it."""
 import os
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "dist", "GungeonOnline-1.0.4.zip")
+OUT = os.path.join(ROOT, "dist", "GungeonOnline-1.0.5.zip")
 
 
 def add_tree(z, src, prefix):

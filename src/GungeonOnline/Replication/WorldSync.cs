@@ -409,7 +409,8 @@ namespace GungeonOnline.Replication
                     foreach (var kv in NetIds.All)
                         if (kv.Value is AIActor a && a && !a.healthHaver.IsDead)
                             c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
-                    foreach (var room in GameManager.Instance.Dungeon.data.rooms)
+                    var dungeon = GameManager.Instance.Dungeon; // none yet on the title screen
+                    if (dungeon != null && dungeon.data != null) foreach (var room in dungeon.data.rooms)
                         if (room.IsSealed) { w.Reset(); w.U8(EvRoomSeal); w.I16((short)RoomIndex(room)); w.Bool(true); c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered); }
                     PickupSync.Instance?.SendAllTo(c);
                     ShopSync.Instance?.SendAllTo(c);
