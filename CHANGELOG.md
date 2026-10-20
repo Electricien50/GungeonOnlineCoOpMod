@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+**Fixes**
+- After a network dropout of roughly 10 to 20 seconds (a Wi-Fi hiccup, say), the game could stay connected but stop sharing the world: enemies, pickups and doors stopped updating for the friend for the rest of the session. Late packets from before the dropout made the host think lost messages had arrived. The connection now catches up by itself within a few seconds, and if it ever does get stuck, it reconnects and restores the run on its own.
+
 ## 1.0.3
 
 **Fixes**

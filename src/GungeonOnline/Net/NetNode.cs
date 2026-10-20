@@ -28,6 +28,8 @@ namespace GungeonOnline.Net
         public IDatagramSocket Socket { get; private set; }
         public readonly List<Connection> Connections = new List<Connection>();
         public double TimeoutSeconds = 20.0;
+        /// <summary>A connection whose reliable messages make no progress this long, while the peer keeps talking, is dropped and rejoins.</summary>
+        public double StallSeconds = 20.0;
         /// <summary>Host: pick a slot for a joining player id (returning players get theirs back). -1 = next free.</summary>
         public Func<string, int> SlotForPlayer;
 
@@ -85,7 +87,7 @@ namespace GungeonOnline.Net
         {
             // Time this game spent frozen (a long load) is not the other side's silence: do not count it.
             if (lastPoll >= 0 && now - lastPoll > 2.0)
-                foreach (var c in Connections) c.LastReceiveTime += now - lastPoll;
+                foreach (var c in Connections) c.ShiftTimers(now - lastPoll);
             lastPoll = now;
             while (Socket.TryReceive(out var from, out var data))
             {
@@ -103,6 +105,7 @@ namespace GungeonOnline.Net
             {
                 var c = Connections[i];
                 if (now - c.LastReceiveTime > TimeoutSeconds) Drop(c, "timed out", sendNotice: false);
+                else if (c.Stalled(now, StallSeconds)) Drop(c, "stalled");
             }
         }
 

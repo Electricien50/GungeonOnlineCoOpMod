@@ -125,6 +125,9 @@ namespace GungeonOnline.Session
                             if (!InviteCode.TryParse(line.Trim(), out var ep)) continue;
                             string key = ep.ToString();
                             if (opened.TryGetValue(key, out var at) && Clock - at < 6f) continue;
+                            bool inAlready = false;
+                            foreach (var c in node.Connections) if (c.Remote != null && c.Remote.ToString() == key) inAlready = true;
+                            if (inAlready) continue; // their last knocks linger at the relay for a few seconds
                             opened[key] = Clock;
                             Heard++;
                             s.OpenPathTo(ep);

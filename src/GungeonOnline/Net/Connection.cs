@@ -71,6 +71,7 @@ namespace GungeonOnline.Net
         ulong remoteAckBits;
         bool anyReceived;
         readonly double[] sentTime = new double[1024];
+        readonly ushort[] sentSeq = new ushort[1024]; // which packet each ring slot holds now
         readonly List<ushort>[] packetMessages = new List<ushort>[1024];
         readonly bool[] packetAcked = new bool[1024];
         int lossWindowSent, lossWindowLost;
@@ -85,6 +86,8 @@ namespace GungeonOnline.Net
         ushort nextExpected;
         ushort lastRelAck;
         double relAckSince;
+        double progressAt = -1;      // last time the peer's "delivered up to" count moved (or nothing was waiting)
+        int packetsSinceProgress;    // data packets from the peer since then: a busy loading screen sends none
         public int StallResends;
         /// <summary>The handshake's random number, stamped on every data packet. Packets from an earlier session at
         /// the same address (a crashed game's last packets still in flight) carry another number and are dropped.</summary>
@@ -135,6 +138,22 @@ namespace GungeonOnline.Net
         }
 
         public int PendingReliable => pending.Count;
+
+        /// <summary>
+        /// The reliable stream is stuck: messages have waited this long while the peer kept sending (so it is not just
+        /// busy loading) and its "delivered up to" count never moved, or so many are waiting that message numbers would
+        /// repeat. Reconnecting rebuilds the session state cleanly.
+        /// </summary>
+        public bool Stalled(double now, double seconds) =>
+            pending.Count > 30000 || (pending.First != null && progressAt >= 0 && now - progressAt > seconds && packetsSinceProgress > 200);
+
+        /// <summary>Time this game spent frozen (a long load) does not count against the peer.</summary>
+        public void ShiftTimers(double dt)
+        {
+            LastReceiveTime += dt;
+            relAckSince += dt;
+            if (progressAt >= 0) progressAt += dt;
+        }
         public string RelStats => $"pending={pending.Count} next={nextExpected} held={outOfOrder.Count} stall={StallResends} stale={StalePackets}";
 
         /// <summary>
@@ -185,6 +204,7 @@ namespace GungeonOnline.Net
                 }
                 int slot = seq & 1023;
                 sentTime[slot] = now;
+                sentSeq[slot] = seq;
                 packetAcked[slot] = false;
                 packetMessages[slot] = msgs;
                 lossWindowSent++;
@@ -252,15 +272,19 @@ namespace GungeonOnline.Net
                 pendingById.Remove(pending.First.Value.Id);
                 pending.RemoveFirst();
             }
-            // Stall guard: the peer's count has not moved for 1.5 s while the oldest message is marked as received.
-            // It was lost after arriving; send it again.
+            if (progressAt < 0 || relAck != lastRelAck || pending.First == null) { progressAt = now; packetsSinceProgress = 0; }
+            else packetsSinceProgress++;
+            // Stall guard: the peer's count has not moved for 1.5 s. Messages near the front that are marked as received
+            // did not all make it (an ack can be wrong after a long outage, or a packet arrived in a state the peer
+            // could not use): send every one of them again, not one per stall.
             if (relAck != lastRelAck) { lastRelAck = relAck; relAckSince = now; }
-            else if (pending.First != null && pending.First.Value.Acked && now - relAckSince > 1.5)
+            else if (pending.First != null && now - relAckSince > 1.5)
             {
-                pending.First.Value.Acked = false;
-                pending.First.Value.LastSent = -1;
+                int k = 0, reset = 0;
+                for (var node = pending.First; node != null && k < 256; node = node.Next, k++)
+                    if (node.Value.Acked) { node.Value.Acked = false; node.Value.LastSent = -1; reset++; }
                 relAckSince = now;
-                StallResends++;
+                if (reset > 0) StallResends++;
             }
 
             while (r.Remaining > 0)
@@ -310,7 +334,9 @@ namespace GungeonOnline.Net
         void Ack(ushort seq, double now)
         {
             int slot = seq & 1023;
-            if (packetAcked[slot] || packetMessages[slot] == null) return;
+            // The ring remembers the last 1024 packets. After a long outage the peer's first packets can still carry an
+            // ack from before it, naming a slot that now holds a newer packet that was lost: that one does not count.
+            if (sentSeq[slot] != seq || packetAcked[slot] || packetMessages[slot] == null) return;
             double age = (now - sentTime[slot]) * 1000.0;
             if (age < 0 || age > 10000) return; // stale slot from a wrapped sequence
             packetAcked[slot] = true;
