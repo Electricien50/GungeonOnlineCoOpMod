@@ -37,6 +37,11 @@ namespace GungeonOnline.Session
                 if (s != null && s.Node != null)
                     foreach (var c in s.Node.Connections)
                         sb.AppendLine($"  peer {c.Slot}: ping {c.RttMs:F0} ms, jitter {c.RttVarMs:F0} ms, loss {c.LossPercent:F1}%, resends {c.Resends}");
+                if (s != null)
+                    sb.AppendLine("Network: steam=" + (s.SteamReady ? "yes" : "no") + " upnp=" + (s.Upnp != null ? s.Upnp.Status.ToString() : "-")
+                        + " public address=" + (s.Stun == null ? "-" : s.Stun.Result != null ? "known" : s.Stun.Failed ? "failed" : "pending")
+                        + " join attempts seen=" + s.JoinAttemptsSeen
+                        + " knock posted=" + Knock.Posted + " polls=" + Knock.Polls + " heard=" + Knock.Heard + " relay failures=" + Knock.Failures);
                 var ck = Replication.Checksum.Instance;
                 if (ck != null) sb.AppendLine($"Sync checks {ck.Checks}, desyncs repaired {ck.Mismatches}, last: {ck.LastMismatch}");
                 sb.AppendLine();

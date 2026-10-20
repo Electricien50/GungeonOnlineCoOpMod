@@ -44,10 +44,27 @@ namespace GungeonOnline.Session
         public string LastError;
         readonly List<KeyValuePair<IPEndPoint, double>> punchTargets = new List<KeyValuePair<IPEndPoint, double>>();
         double nextStats;
+        bool joinExtended, stunFailLogged;
+        UpnpMapper.State upnpLogged = UpnpMapper.State.Idle;
+        double nextRefusedToast;
+        public int JoinAttemptsSeen;
 
         public NetNode Node => node;
         public StunClient Stun => stun;
         public UpnpMapper Upnp => upnp;
+
+        /// <summary>Where other players reach this game from the internet (from STUN). In tests: the loopback port.</summary>
+        public IPEndPoint PublicEndPoint
+        {
+            get
+            {
+                if (Dev.DevEnv.IsHarness && udp != null && udp.LocalEndPoint is IPEndPoint lp) return new IPEndPoint(IPAddress.Loopback, lp.Port);
+                return stun?.Result;
+            }
+        }
+
+        /// <summary>Send a few packets toward a friend so this side's router lets their join in (see <see cref="Knock"/>).</summary>
+        public void OpenPathTo(IPEndPoint ep) { if (Active) AddPunch(ep); }
         public bool SteamReady => steam != null;
         public void InviteSteamFriend() => steam?.Invite();
 
@@ -159,6 +176,11 @@ namespace GungeonOnline.Session
                 Plugin.Log.LogInfo($"Simulated link: rtt={lat}ms jitter={jit}ms loss={loss}%");
                 s = new SimulatedLinkSocket(s, () => Now, lat, jit, loss, Environment.TickCount);
             }
+            if (Environment.GetEnvironmentVariable("GO_SIM_STRICT_ROUTER") == "1")
+            {
+                Plugin.Log.LogInfo("Simulated strict router: packets from unknown addresses are dropped");
+                s = new StrictRouterSocket(s);
+            }
             return s;
         }
 
@@ -180,6 +202,7 @@ namespace GungeonOnline.Session
                 steam?.Host(NetConfig.MaxPlayers.Value);
                 Wire();
                 StartStun();
+                StartCoroutine(Knock.Host(this, node));
                 if (NetConfig.UseUpnp.Value && !Dev.DevEnv.IsHarness)
                 {
                     upnp = new UpnpMapper();
@@ -203,7 +226,9 @@ namespace GungeonOnline.Session
                 node = new NetNode(MakeSocket(Dev.DevEnv.PortOverride ?? 0, withSteam: false), false, NetConfig.MaxPlayers.Value, MakeHandshake());
                 Wire();
                 StartStun();
+                joinExtended = false;
                 node.Connect(ep, Now);
+                StartCoroutine(Knock.Joiner(this, node, ep));
                 NetConfig.LastJoin.Value = code.Trim();
                 Toasts.Show("Joining...");
                 // Opening our NAT toward the host lets a host behind a strict NAT reach us once it punches back.
@@ -311,8 +336,34 @@ namespace GungeonOnline.Session
             {
                 Plugin.Log.LogWarning("Join rejected: " + why);
                 if (Reconnecting && why == "no answer from host") { nextReconnect = Now + 2.0; return; } // keep trying
-                Toasts.Show(why == "no answer from host" ? "Could not reach the host. Ask for the invite code again, or send your reply code." : why, 7f, true);
+                if (why == "no answer from host" && !joinExtended && steamHost == null && node.LastHost is IPEndPoint hostEp)
+                {
+                    // Keep this same connection trying for another minute: the host's game can still open a path to us
+                    // (by itself through the relay, or with our reply code), and the code only works while we keep trying.
+                    joinExtended = true;
+                    node.Connect(hostEp, Now, 60);
+                    StartCoroutine(Knock.Joiner(this, node, hostEp));
+                    if (InviteCodeText != null)
+                    {
+                        try { GUIUtility.systemCopyBuffer = InviteCodeText; } catch { }
+                        Toasts.Show("Still trying to reach the host. Your reply code is copied: send it to the host, and they pick Let in friend.", 10f, true);
+                    }
+                    else Toasts.Show("Still trying to reach the host...", 6f, true);
+                    Plugin.Log.LogInfo("Join: no answer yet, trying for another minute (reply code " + (InviteCodeText != null ? "copied" : "not ready") + ")");
+                    return;
+                }
+                Toasts.Show(why == "no answer from host" ? "Could not reach the host. Check the invite code, or have your friend host instead." : why, 7f, true);
                 Leave(why);
+            };
+            node.JoinAttempt += (from, theirMod, refused) =>
+            {
+                JoinAttemptsSeen++;
+                Plugin.Log.LogInfo("Join attempt from " + from + " (mod " + theirMod + ")" + (refused != null ? ", turned away: " + refused : ""));
+                if (refused == null || Now < nextRefusedToast) return;
+                nextRefusedToast = Now + 10.0;
+                Toasts.Show(theirMod != Plugin.Version ? "A friend tried to join with mod " + theirMod + ". You have " + Plugin.Version + ". You both need the same version."
+                    : refused == "The game is full." ? "A friend tried to join, but the game is full."
+                    : "A friend tried to join, but their game version is different. Update the game on both PCs.", 9f, true);
             };
             node.Message += (c, ch, data, d) =>
             {
@@ -358,6 +409,12 @@ namespace GungeonOnline.Session
                 nextReconnect = now + 7.0;
             }
             stun?.Update(now);
+            if (stun != null && stun.Failed && !stunFailLogged) { stunFailLogged = true; Plugin.Log.LogInfo("STUN: could not learn our public address"); }
+            if (upnp != null && upnp.Status != upnpLogged && (upnp.Status == UpnpMapper.State.Mapped || upnp.Status == UpnpMapper.State.Failed))
+            {
+                upnpLogged = upnp.Status;
+                Plugin.Log.LogInfo("UPnP: " + (upnp.Status == UpnpMapper.State.Mapped ? "port forwarded by the router" : "router did not forward the port (" + upnp.Error + ")"));
+            }
             if (stun != null && stun.Result != null && InviteCodeText == null)
             {
                 // Hosts behind UPnP keep the same port outside; otherwise the STUN-mapped port is the one to share.
@@ -409,6 +466,9 @@ namespace GungeonOnline.Session
             stun = null;
             InviteCodeText = null;
             punchTargets.Clear();
+            joinExtended = false;
+            stunFailLogged = false;
+            upnpLogged = UpnpMapper.State.Idle;
             Status = "Offline";
             if (reason != null) LastError = reason;
             Game.BackgroundRun.SessionActive = false;

@@ -35,6 +35,9 @@ namespace GungeonOnline.Net
         public event Action<Connection, string> Disconnected;
         public event Action<Connection, byte, byte[], Delivery> Message;
         public event Action<string> Rejected;
+        /// <summary>Host: someone tried to join (their address, their mod version, and why they were turned away, or null).</summary>
+        public event Action<EndPoint, string, string> JoinAttempt;
+        uint lastAttemptNonce;
         /// <summary>Datagram that is not part of any connection (STUN replies, punches). Return true if consumed.</summary>
         public Func<EndPoint, byte[], bool> RawHandler;
 
@@ -183,6 +186,7 @@ namespace GungeonOnline.Net
                 slot = wanted > 0 && !SlotTaken(wanted) ? wanted : FreeSlot();
             }
             if (reason == null && slot < 0) reason = "The game is full.";
+            if (n != lastAttemptNonce) { lastAttemptNonce = n; JoinAttempt?.Invoke(from, mod, reason); }
             if (reason != null)
             {
                 w.Reset(); w.U16(Packet.Magic); w.U8((byte)PacketType.Reject); w.U32(n); w.Str(reason);

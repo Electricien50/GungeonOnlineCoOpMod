@@ -81,7 +81,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-Download the latest **`GungeonOnline-1.0.2.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
+Download the latest **`GungeonOnline-1.0.3.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
 
 ### Option A: the installer (easiest)
 
@@ -118,7 +118,7 @@ Start the game and press pause: you should see **PLAY ONLINE** in the pause menu
 3. Your friend copies the code and picks **Join**.
 4. Each player picks a character in their own Breach. The host walks into the Gungeon when everyone is ready.
 
-If the join doesn't go through, your friend sends you their *reply code* and you pick *Let in friend*. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
+If the host's router or firewall blocks the join, the mod opens a path by itself within a few seconds. If it still doesn't go through, your friend's *reply code* is copied for them: they send it to you and you pick *Let in friend* while they're still trying. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
 
 ## Roadmap
 
@@ -136,7 +136,7 @@ My mods will always be free but donations are welcome on kofi! [ko-fi.com/hero88
 - **Cross-store:** Steam, GOG and Epic copies play together (the game code is identical on all three).
 - **Controller-first menu:** pick *Play Online* in the game's own pause menu, or hold **Back + Start**, or press **F8**.
 - **Invite codes copied for you.** Host, send the code, your friend joins from their clipboard. Steam players can also invite from the friends list.
-- **Gets through home routers:** automatic UPnP, hole punching, a reply-code fallback, and plain `ip:port` for VPNs like Tailscale or Radmin VPN.
+- **Gets through home routers:** automatic UPnP, hole punching (the host's game opens a path when a friend knocks), a reply-code fallback, and plain `ip:port` for VPNs like Tailscale or Radmin VPN. To knock, the joining game sends both players' public addresses to the mod's relay, which forgets them after 30 seconds.
 - **Your own progress:** Hegemony credits, kills and unlocks earned in the run go into both players' saves.
 - **Fair hits and falls:** whether a bullet hit you, or you fell into a pit, is decided on your own screen. If you saw it miss, it missed.
 - **Per-player aim assist:** each player's own aim assist setting applies to their character on every PC.
@@ -183,12 +183,12 @@ Your normal save is used and gets credit for runs you play online. Run backups g
 - **No PLAY ONLINE in the pause menu:** the files went into the wrong folder. They must sit right next to `EtG.exe` (you should see `winhttp.dll` and the `BepInEx` folder beside it). Steam players: check you copied into the folder that **Browse local files** opened.
 - **The installer window closes or does nothing:** use Option B, it does the same thing.
 - **"Your friend has a different version":** both players need the same download. Get the latest from [Releases](../../releases).
-- **Can't connect:** the joiner sends the host their *reply code* and the host picks *Let in friend*. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
+- **Can't connect:** give it a few seconds, the mod opens a path through the host's router by itself. If it still fails, the joiner's *reply code* is copied for them: they send it to the host, who picks *Let in friend*. Swapping who hosts also often works. If both routers are strict, use Tailscale or Radmin VPN and join with `ip:port`.
 - Anything else: [open an issue](../../issues) and use *Send report* (Settings, Help and advanced).
 
 ## Status
 
-Version 1.0.2 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
+Version 1.0.3 beta. **Found a bug? Please [open an issue](../../issues)** and use *Send report* (Settings, Help and advanced) if you can. Every report helps.
 
 ## Settings
 

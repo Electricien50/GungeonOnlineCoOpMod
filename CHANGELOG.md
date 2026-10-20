@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3
+
+**Fixes**
+- Friends can now get in when the host's router or firewall was blocking the join. The joining game asks the host's game, through the mod's small relay, to open a path, and the next try goes through. Only the two public addresses are sent, and the relay forgets them after 30 seconds.
+- If the host still can't be reached, the joining game keeps trying for another minute and copies your reply code for you, so the host can pick Let in friend. Before, the reply code was never shown, and it stopped working as soon as the join gave up.
+- The host now gets a message when someone tries to join with a different version of the mod or the game, or when the game is full.
+- Send report now includes what the connection setup saw, so join problems are easier to track down.
+
 ## 1.0.2
 
 **New**

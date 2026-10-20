@@ -22,6 +22,9 @@ PLAY
   4. Both pick a character in the Breach. The host walks into the Gungeon.
 
   Both players need the same version of the mod.
+  Can't get in? Wait a few seconds: the mod opens a path through the host's
+  router by itself. If it still fails, your reply code is copied: send it to
+  the host, who picks Let in friend. Or swap who hosts.
   If the connection drops, the run waits for you and you reconnect by yourself.
   Problem? Settings, Help and advanced, Send report, then open an issue on GitHub:
   https://github.com/Hero88go/GungeonOnlineCoOpMod/issues

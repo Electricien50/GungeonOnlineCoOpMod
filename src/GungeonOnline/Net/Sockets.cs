@@ -148,6 +148,36 @@ namespace GungeonOnline.Net
 
 namespace GungeonOnline.Net
 {
+    /// <summary>
+    /// Test-only: behaves like a strict home router or firewall. A datagram from an address this side has never
+    /// sent to is dropped, so a friend's first join packet never arrives until this side has opened a path to them.
+    /// </summary>
+    public sealed class StrictRouterSocket : IDatagramSocket
+    {
+        readonly IDatagramSocket inner;
+        readonly System.Collections.Generic.HashSet<string> opened = new System.Collections.Generic.HashSet<string>();
+        public int Dropped;
+        public StrictRouterSocket(IDatagramSocket inner) { this.inner = inner; }
+        public System.Net.EndPoint LocalEndPoint => inner.LocalEndPoint;
+        public void SendTo(System.Net.EndPoint to, byte[] buf, int len)
+        {
+            lock (opened) opened.Add(to.ToString());
+            inner.SendTo(to, buf, len);
+        }
+        public bool TryReceive(out System.Net.EndPoint from, out byte[] data)
+        {
+            while (inner.TryReceive(out from, out data))
+            {
+                bool ok;
+                lock (opened) ok = opened.Contains(from.ToString());
+                if (ok) return true;
+                Dropped++;
+            }
+            return false;
+        }
+        public void Dispose() => inner.Dispose();
+    }
+
     /// <summary>Test-only: drops every datagram in and out while <see cref="Dropping"/> says so (simulated outage).</summary>
     public sealed class OutageSocket : IDatagramSocket
     {

@@ -229,6 +229,8 @@ namespace GungeonOnline.Session
                     if (NetSession.IsHost && Game.AwayGuard.Instance != null && Game.AwayGuard.Instance.AnyoneAway)
                         Add(Game.AwayGuard.Instance.ContinueAlone ? "Wait for my friend (pause the run)" : "Continue alone for now",
                             () => Game.AwayGuard.Instance.ContinueAlone = !Game.AwayGuard.Instance.ContinueAlone);
+                    if (!NetSession.IsHost && s.Node != null && s.Node.Connecting && s.InviteCodeText != null)
+                        Add("Copy my reply code", () => { GUIUtility.systemCopyBuffer = s.InviteCodeText; Toasts.Show("Reply code copied. Send it to the host, and they pick Let in friend."); });
                     Add("Settings", () => Go(Screen.Settings));
                     if (NetSession.IsHost && s.InviteCodeText != null) Add("Show invite code", () => Go(Screen.Host));
                     // Stop for the night: the run is saved and can be resumed any time later from this menu.
