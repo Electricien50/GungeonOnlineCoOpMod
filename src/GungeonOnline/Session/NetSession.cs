@@ -195,6 +195,14 @@ namespace GungeonOnline.Session
         public void Host()
         {
             if (Active) return;
+            // A run started offline cannot be shared: its floors were not built from a seed the friend's game can
+            // repeat, so the friend would never reach this floor. Online play starts in the Breach.
+            if (Game.RunSync.CurrentIndex < 0 && GameManager.HasInstance && GameManager.Instance.Dungeon != null && !Game.SceneObjects.InBreach)
+            {
+                Toasts.Show("Online play starts in the Breach. Finish or quit this run, then pick Host there.", 7f, true);
+                Plugin.Log.LogInfo("Host refused: in a run that was started offline");
+                return;
+            }
             try
             {
                 int port = Dev.DevEnv.PortOverride ?? NetConfig.Port.Value;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.6
+
+**Fixes**
+- Hosting from inside a run you started alone no longer lets a friend join a game that cannot sync (they stayed in the Breach while you saw a frozen copy of them). That run's floors were not built in a way your friend's game can repeat, so the game now says to start online play from the Breach. Hosting in the Breach and then starting the run works as before, and friends can still join a run that was started online.
+
 ## 1.0.5
 
 **Fixes**

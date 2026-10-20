@@ -47,10 +47,32 @@ namespace GungeonOnline.Dev
             Start(DevEnv.Auto);
         }
 
+        /// <summary>Harness (GO_HOST_IN_RUN=1): the host starts a run alone, offline, and hosts from floor 1; the guest
+        /// joins once the host is up there. What a player does who decides to play online mid-run.</summary>
+        static System.Collections.IEnumerator HostInRun()
+        {
+            while (!Game.SceneObjects.InBreach || GameManager.Instance.PrimaryPlayer == null) yield return null;
+            yield return new UnityEngine.WaitForSeconds(6f);
+            UnityEngine.Debug.Log("Harness: leaving the Breach alone, offline");
+            Pixelator.Instance.FadeToBlack(0.5f);
+            GameManager.Instance.DelayedLoadNextLevel(0.75f);
+            Game.SceneObjects.Breach.OnDepartedFoyer();
+            yield return new UnityEngine.WaitForSeconds(3f);
+            while (GameManager.Instance.IsLoadingLevel || !Game.SceneObjects.OnDungeonFloor || GameManager.Instance.PrimaryPlayer == null) yield return null;
+            yield return new UnityEngine.WaitForSeconds(8f);
+            UnityEngine.Debug.Log("Harness: hosting from inside the run");
+            NetSession.Instance.Host();
+        }
+
         public static void Begin()
         {
             var a = DevEnv.Auto;
             if (a == null || NetSession.Instance == null) return;
+            if (System.Environment.GetEnvironmentVariable("GO_HOST_IN_RUN") == "1")
+            {
+                if (a == "host") { NetSession.Instance.StartCoroutine(HostInRun()); return; }
+                if (a.StartsWith("join:")) { NetSession.Instance.StartCoroutine(Late(45f)); return; }
+            }
             var late = System.Environment.GetEnvironmentVariable("GO_JOIN_LATE");
             if (!string.IsNullOrEmpty(late) && (a == "host" || a.StartsWith("join:")))
             {
