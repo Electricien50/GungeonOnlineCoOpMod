@@ -69,9 +69,9 @@ namespace GungeonOnline.Replication
         static readonly double bufPercentile = ParsePct(System.Environment.GetEnvironmentVariable("GO_BUF_PCT"));
         // GO_BUF_CAP (tests): most smoothing Auto may use, in ms.
         static readonly float bufCap = float.TryParse(System.Environment.GetEnvironmentVariable("GO_BUF_CAP"), out var cap) && cap >= 4f ? cap : 40f;
-        // GO_BUF_SCALE (tests): smoothing per ms of measured jitter. GO_AHEAD=0 (tests): place late frames where they were.
+        // GO_BUF_SCALE (tests): smoothing per ms of measured jitter. GO_AHEAD=1 (tests): place late frames where the owner is now.
         static readonly float bufScale = float.TryParse(System.Environment.GetEnvironmentVariable("GO_BUF_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sc) && sc >= 0f ? sc : 1.2f;
-        static readonly bool aheadOn = System.Environment.GetEnvironmentVariable("GO_AHEAD") != "0";
+        static readonly bool aheadOn = System.Environment.GetEnvironmentVariable("GO_AHEAD") == "1"; // off until measured
         /// <summary>Longest lateness a frame is carried forward over, and the furthest it is moved (units).</summary>
         const double AheadMaxMs = 80;
         const float AheadMaxDist = 1.2f;

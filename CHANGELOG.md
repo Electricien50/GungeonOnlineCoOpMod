@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.1 (in progress)
+## 1.1.1
+
+**Fixes**
+- Teammate HUD set to hearts only (the default with 3 or 4 players): your teammates' gun and item pictures no longer float on screen without their boxes.
+- Teammate HUD set to off now hides your teammates' hearts and blanks too.
+
+## 1.1
 
 **3 and 4 players (experimental)**
 - Online co-op for up to 4 players. The host picks *Players: 2, 3 or 4* on the Hosting screen; everyone else sees the host's choice.
@@ -14,7 +20,7 @@
 - *Your color* (8 choices) is shared with everyone: your name tag, outline and HUD face use it.
 - *HUD faces*: each player's character face beside their hearts. *Outlines*: off, teammates, or everyone, in each player's color.
 - *Teammate HUD*: everything, hearts only, or off. Name tags are solid, close above the head, with a *Name height* option.
-- Stays two-player: the game's own mid-run save (the mod's run backups cover everyone), couch co-op on one PC, the boss card portraits.
+- With 3 or 4 players, the game's own Save and Quit only remembers 2 players; the mod saves the run for everyone and picks it back up when someone reconnects. Couch co-op (two people on one PC) and the boss intro cards stay 2 players.
 
 **Smoother motion on uneven connections**
 - When a friend's input arrives late, their character slides into place instead of hopping; on the guest's screen, enemies, enemy bullets and empty mine carts do the same when an update from the host lands. Only the look changes: where things really are, and what they hit, is exact. Measured on jittery connections: 2 to 4 times less on-screen jerk, no added delay. Option: *SmoothFriendMotion* (on).
