@@ -91,6 +91,8 @@ namespace GungeonOnline.Replication
         /// <summary>Host: a player died here (ghost or game over follows); every machine runs the same death on its copy.</summary>
         // ---------- Pit falls: the owner of a player decides, like hits ----------
 
+        static bool itemErrorLogged;
+
         static bool fallScope;
 
         /// <summary>Another machine's player only falls when its owner says it fell, so nobody sees a fall that did not happen.</summary>
@@ -225,7 +227,10 @@ namespace GungeonOnline.Replication
                 try
                 {
                     // Apply as a real hit (damage reactions, item triggers), then pin to what the owner saw.
-                    p.healthHaver.ApplyDamage(dmg, dir, "remote", CoreDamageTypes.None, DamageCategory.Normal, true);
+                    // An item's own reaction to the hit can fail on a copy (it was written for a local player); the
+                    // hit still counts, and health and death below must still follow what the owner saw.
+                    try { p.healthHaver.ApplyDamage(dmg, dir, "remote", CoreDamageTypes.None, DamageCategory.Normal, true); }
+                    catch (System.Exception e) { if (!itemErrorLogged) { itemErrorLogged = true; Plugin.Log.LogWarning("Vitals: an item's hit reaction failed on a copy: " + e.Message); } }
                     p.healthHaver.ForceSetCurrentHealth(hpAfter);
                     p.healthHaver.Armor = armorAfter;
                     // The owner saw this hit kill; if this copy's own checks (i-frames, invulnerability) skipped the
