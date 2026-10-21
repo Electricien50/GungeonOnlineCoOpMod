@@ -226,6 +226,28 @@ namespace GungeonOnline.Dev
             elevStep = 3;
         }
 
+        // GO_STATUE_SWAP=PlayerBullet (client): 8 s after both players stand in the Breach, swap to that character at its
+        // statue, as a player walking up to it would (a reported bug: the host then teleported the guest into a wall).
+        float statueSince = -1f;
+        bool statueDone;
+        void StatueSwap()
+        {
+            var want = System.Environment.GetEnvironmentVariable("GO_STATUE_SWAP");
+            if (statueDone || string.IsNullOrEmpty(want) || Session.NetSession.IsHost || !Game.SceneObjects.InBreach) return;
+            if (GameManager.Instance.PrimaryPlayer == null || Game.PlayerSlots.ForSlot(0) == null) { statueSince = -1f; return; }
+            if (statueSince < 0) statueSince = Time.realtimeSinceStartup;
+            if (Time.realtimeSinceStartup - statueSince < 8f) return;
+            statueDone = true;
+            foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>())
+                if (!f.IsCoopCharacter && !f.IsAlternateCostume && f.CharacterPrefabPath != null && f.CharacterPrefabPath.EndsWith(want))
+                {
+                    Plugin.Log.LogInfo($"Harness: statue swap to {want} at {(Vector2)GameManager.Instance.PrimaryPlayer.transform.position}");
+                    Game.SceneObjects.Breach.StartCoroutine(Game.SceneObjects.Breach.OnSelectedCharacter(0.05f, f));
+                    return;
+                }
+            Plugin.Log.LogInfo("Harness: statue swap found no statue for " + want);
+        }
+
         int swapStep;
         float swapSince = -1f, titleSeen = -1f;
 
@@ -677,6 +699,7 @@ namespace GungeonOnline.Dev
             if (!DevEnv.IsHarness) return;
             // The swap test crosses the title screen, where the rest of the harness update can throw: keep it apart.
             try { SwapTest(Time.realtimeSinceStartup); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: swap step error " + e.Message); }
+            try { StatueSwap(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: statue swap error " + e.Message); }
             try { HarnessUpdate(); }
             catch (System.Exception e)
             {

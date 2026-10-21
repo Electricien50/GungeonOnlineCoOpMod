@@ -14,7 +14,7 @@ namespace GungeonOnline.Game
     /// </summary>
     internal sealed class RunSync : MonoBehaviour
     {
-        const byte MsgLoadLevel = 1, MsgRejoin = 2;
+        const byte MsgLoadLevel = 1, MsgRejoin = 2, MsgLayout = 3;
         /// <summary>Index of the floor currently loaded (both machines).</summary>
         public static int CurrentIndex = -1;
         public static RunSync Instance { get; private set; }
@@ -130,12 +130,25 @@ namespace GungeonOnline.Game
             byte type = r.U8();
             if (NetSession.IsHost) return;
             if (type == MsgRejoin) { OnRejoin(ref r); return; }
+            if (type == MsgLayout) { hostLayoutIndex = r.I32(); hostLayout = r.Str(); CheckLayout(); return; }
             if (type != MsgLoadLevel) return;
             int seed = r.I32();
             int index = r.I32();
             string injected = r.Str();
+            // Still finding our way back after a restart (the game may not even be ready to load yet): go to this
+            // floor when the rejoin gets there, not now. The host moved on while we were away.
+            if (rejoining)
+            {
+                pendingSeed = seed; pendingIndex = index; pendingInjected = injected; hasPending = true;
+                Plugin.Log.LogInfo($"RunSync: host moved to floor index {index} while we rejoin, going there instead");
+                return;
+            }
             LoadFloor(seed, index, injected);
         }
+
+        static bool hasPending;
+        static int pendingSeed, pendingIndex;
+        static string pendingInjected;
 
         void OnRejoin(ref WireReader r)
         {
@@ -157,6 +170,7 @@ namespace GungeonOnline.Game
             Plugin.Log.LogInfo($"RunSync: rejoining the run on floor index {index}");
             Toasts.Show("Rejoining your run...", 5f);
             rejoining = true;
+            hasPending = false;
             StartCoroutine(RejoinFlow(seed, index, injected, prefab));
         }
 
@@ -169,6 +183,7 @@ namespace GungeonOnline.Game
                 yield return StartCoroutine(CharacterPicker.Pick(prefab));
             float giveUp = Time.realtimeSinceStartup + 20f;
             while (GameManager.Instance.PrimaryPlayer == null && Time.realtimeSinceStartup < giveUp) yield return null;
+            if (hasPending) { seed = pendingSeed; index = pendingIndex; injected = pendingInjected; hasPending = false; }
             LoadFloor(seed, index, injected);
         }
 
@@ -228,11 +243,15 @@ namespace GungeonOnline.Game
             if (scene == lastScene) return;
             lastScene = scene;
             LastFingerprint = Fingerprint();
-            if (NetSession.Active && !NetSession.IsHost) Replication.WorldSync.Instance?.OnFloorLoaded();
+            fingerprintIndex = SceneObjects.InBreach ? -1 : CurrentIndex; // which floor that fingerprint is of
+            // Not ready in the Breach while on our way back into a run: the host would send us its floor's world.
+            if (NetSession.Active && !NetSession.IsHost && !(rejoining && SceneObjects.InBreach)) Replication.WorldSync.Instance?.OnFloorLoaded();
             if (!SceneObjects.InBreach) rejoining = false;
             if (NetSession.Active && NetSession.IsHost && !SceneObjects.InBreach) RunBackup.OnHostFloorReady();
             if (SceneObjects.InBreach) CurrentIndex = -1;
             Plugin.Log.LogInfo("FLOOR " + scene + " " + LastFingerprint);
+            if (NetSession.Active && NetSession.IsHost && !SceneObjects.InBreach) SendLayout(null);
+            if (NetSession.Active && !NetSession.IsHost) CheckLayout();
             var dir = System.Environment.GetEnvironmentVariable("GO_RUN_DIR");
             if (dir != null)
             {
@@ -242,6 +261,60 @@ namespace GungeonOnline.Game
                 lines.Sort();
                 System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "enemies-" + scene + ".txt"), lines.ToArray());
             }
+        }
+
+        // ---------- Same floor on every machine? ----------
+        // Every machine builds the floor itself from the host's seed. Another mod that changes floors (new rooms,
+        // new enemies) makes each machine build a different one: rooms, walls and enemies stop matching. The host
+        // sends its layout; a guest whose own differs is told why, once per floor.
+
+        static string hostLayout;
+        static int hostLayoutIndex = -2, warnedIndex = -2, fingerprintIndex = -1;
+
+        static string LayoutPart(string fp)
+        {
+            int i = fp.IndexOf("rooms="), j = fp.IndexOf(" enemies=");
+            return i >= 0 && j > i ? fp.Substring(i, j - i) : fp;
+        }
+
+        /// <summary>Host: our layout to everyone (or one newcomer).</summary>
+        public void SendLayout(Connection to)
+        {
+            // Only a fingerprint of the floor we are on now (mid-load, the last one is still the previous floor's).
+            if (!NetSession.Active || !NetSession.IsHost || fingerprintIndex < 0 || fingerprintIndex != CurrentIndex || LastFingerprint == "-") return;
+            if (GameManager.Instance.IsLoadingLevel || Dungeon.IsGenerating) return;
+            var w = new WireWriter(96);
+            w.U8(MsgLayout); w.I32(fingerprintIndex); w.Str(LayoutPart(LastFingerprint));
+            if (to != null) to.Send((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
+            else NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
+        }
+
+        void CheckLayout()
+        {
+            if (hostLayout == null || fingerprintIndex < 0 || hostLayoutIndex != fingerprintIndex || fingerprintIndex != CurrentIndex || SceneObjects.InBreach || LastFingerprint == "-") return;
+            if (GameManager.Instance.IsLoadingLevel || Dungeon.IsGenerating) return;
+            var mine = LayoutPart(LastFingerprint);
+            if (System.Environment.GetEnvironmentVariable("GO_LAYOUT_TEST") == "1") mine += "-test"; // tests: a floor that differs
+            if (mine == hostLayout || warnedIndex == CurrentIndex) return;
+            warnedIndex = CurrentIndex;
+            var others = OtherMods();
+            Plugin.Log.LogWarning($"FLOOR MISMATCH: host {hostLayout}, mine {mine}; other mods: {(others.Length > 0 ? others : "none")}");
+            Toasts.Show(others.Length > 0
+                ? "This floor is different from the host's, so rooms and enemies won't match. Other mods can change floors: " + others + ". Everyone needs the same mods, or play without them."
+                : "This floor is different from the host's, so rooms and enemies won't match. Does the host have other mods installed? Everyone needs the same mods.", 14f, true);
+        }
+
+        /// <summary>Other BepInEx plugins loaded next to this one, by name.</summary>
+        public static string OtherMods()
+        {
+            var names = new System.Collections.Generic.List<string>();
+            try
+            {
+                foreach (var kv in BepInEx.Bootstrap.Chainloader.PluginInfos)
+                    if (kv.Key != Plugin.Guid && kv.Value != null && kv.Value.Metadata != null) names.Add(kv.Value.Metadata.Name);
+            }
+            catch (System.Exception) { }
+            return string.Join(", ", names.ToArray());
         }
 
         /// <summary>Hashes of the floor layout, enemies, chests and pickups, with counts.</summary>

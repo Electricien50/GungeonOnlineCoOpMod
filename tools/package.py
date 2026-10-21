@@ -1,4 +1,4 @@
-"""Builds dist/GungeonOnline-1.1.1.zip: double-click installer + files/ payload (BepInEx + plugin) + how-to-play.
+"""Builds dist/GungeonOnline-1.1.2.zip: double-click installer + files/ payload (BepInEx + plugin) + how-to-play.
 Same zip for Steam, GOG and Epic. Uses forward-slash paths so every unzip tool reads it."""
 import os
 import zipfile

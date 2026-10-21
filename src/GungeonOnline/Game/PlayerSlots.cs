@@ -116,14 +116,18 @@ namespace GungeonOnline.Game
         }
 
         /// <summary>Spawn (or re-spawn with a new character) the remote player for <paramref name="slot"/>.</summary>
+        static readonly bool oldSwap = System.Environment.GetEnvironmentVariable("GO_OLD_SWAP") == "1"; // tests: the 1.1.1 swap, before/after
+
         public static PlayerController SpawnRemote(int slot, string prefabPath)
         {
             var gm = GameManager.Instance;
             var local = Local;
             if (local == null) return null; // spawn once the local player exists
+            Vector3? keepAt = null;
             if (remotes.TryGetValue(slot, out var existing) && existing)
             {
                 if (remoteChoice.TryGetValue(slot, out var prev) && prev == prefabPath) return existing;
+                if (!oldSwap) keepAt = existing.transform.position; // a character swap: the new one stands where they are
                 Despawn(slot);
             }
             var prefab = (GameObject)BraveResources.Load(prefabPath);
@@ -132,7 +136,8 @@ namespace GungeonOnline.Game
             gm.CurrentGameType = GameManager.GameType.COOP_2_PLAYER;
             local.ReinitializeMovementRestrictors();
             int id = IdForSlot(slot);
-            var p = CreateRemote(prefab, local.transform.position + new Vector3(1.5f * id, 0f, 0f), id);
+            var p = CreateRemote(prefab, keepAt ?? local.transform.position + new Vector3(1.5f * id, 0f, 0f), id);
+            if (!oldSwap) Replication.PlayerSync.Instance?.Forget(slot);
             remotes[slot] = p;
             remoteChoice[slot] = prefabPath;
             RepointSecondary();

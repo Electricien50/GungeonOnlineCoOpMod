@@ -73,6 +73,17 @@ namespace GungeonOnline.Replication
             detectAfter = Time.realtimeSinceStartup + 2f;
         }
 
+        /// <summary>
+        /// A new copy replaced this player (they swapped character, or joined): forget where the old one was, or the
+        /// host takes the swap for something in its game moving them and sends them to the new copy's spot.
+        /// </summary>
+        public void Forget(int slot)
+        {
+            if (!tracks.TryGetValue(slot, out var t)) return;
+            t.FrameStartValid = false;
+            t.FrameEndValid = false;
+        }
+
         Track T(int slot)
         {
             if (!tracks.TryGetValue(slot, out var t)) tracks[slot] = t = new Track();

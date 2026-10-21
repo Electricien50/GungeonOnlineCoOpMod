@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.2
+
+**Faster friends**
+- Your friends' characters show up 14 to 21 ms sooner on your screen (measured: 44 to 30 ms on fiber, 67 to 47 ms on a jittery 50 ms link, 82 to 61 ms on hotel Wi-Fi), and closer to where they really are. Instead of waiting for late input, the mod keeps your friend moving and puts a late update where they are by then, never past a stop, turn or roll. The old way is still there: raise *Smoothing of your friend* in Settings.
+
+**Fixes**
+- Swapping character in the Breach no longer teleports the guest next to the host (sometimes into a wall).
+- A guest who crashed and came back while the host was changing floors could end up a floor behind and stuck.
+- If your floor is different from the host's (usually another mod that changes floors, or different mods on each PC), you now get a message saying so, with your other mods listed, instead of rooms and enemies that silently don't match.
+
 ## 1.1.1
 
 **Fixes**
