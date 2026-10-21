@@ -81,7 +81,7 @@ Gungeon's co-op has always been couch co-op: one shared camera, and player two i
 
 ## Install
 
-Download the latest **`GungeonOnline-1.1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Both players need the same version.
+Download the latest **`GungeonOnline-1.1.0.zip`** from [Releases](../../releases) and unzip it anywhere (right-click, Extract All). Close the game first. Then pick **either** way below. Everyone needs the same version.
 
 ### Option A: the installer (easiest)
 
@@ -128,7 +128,8 @@ Host as usual and set **Players** to 3 or 4 on the Hosting screen (it's next to 
 - Going down is a knock-out while anyone is still up: the run ends only when everyone is down. Any revive chest or boss pedestal brings everyone back.
 - Classic style pulls everyone into the fight; Explore is one fight at a time.
 - Enemies get 1.25x health with 2 players (the game's own number), 1.5x with 3 and 1.75x with 4. Change it in the config if you want it easier or harder.
-- Each friend's name tag has its own colour.
+- Pick **Your color** in the online menu: your name tag, outline and HUD face use it, so everyone can tell who is who.
+- **HUD faces** puts each player's character face beside their hearts. **Outlines** draws players in their color (off, teammates, or everyone). **Teammate HUD** shows everything, hearts only, or nothing for teammates. **Name height** moves name tags closer or higher.
 
 ## Roadmap
 
@@ -177,7 +178,7 @@ No. Rollback means rewinding and replaying the whole game every time a late inpu
 Your own character is never delayed. Your friend's character, the enemies and the bullets show up about half your ping behind. The mod's own work costs about 0.2 ms per frame on the host.
 
 **Can more than 2 people play?**
-Not yet. Enter the Gungeon itself supports two players. The netcode is written for more (a slot array and star topology), and 3 to 4 players is on the roadmap.
+Yes, up to 4 (experimental). The host sets **Players** to 3 or 4 on the Hosting screen. See *Playing with 3 or 4* above.
 
 **Does it work on Steam Deck / Linux?**
 Not tested yet.
@@ -210,11 +211,19 @@ All settings are in the online menu (*Settings*) and in `BepInEx/config/gungeono
 | Correction speed | 0.25 | How fast small position differences from the host are blended out. |
 | Co-op style | Classic | Host only. Classic: a fight pulls your partner into the room, like local co-op. Explore: one fight at a time, nobody pulled. |
 | Friend locator | Pickup tag | When your friend is off your screen, a small tag at the edge with their head and distance points the way. Or a speech bubble, or off. |
-| Name tags | Off | Your friend's username above them, below their feet, or above and faint. With a color (gold, white, sky, rose, mint) and opacity (100%, 75%, 50%). |
+| Name tags | Above | Each player's username above them (solid), below their feet, or off. In their chosen color, with opacity 100%, 75% or 50%. |
+| Name height | Close | How far above the head name tags sit: close, normal or high. |
+| Your color | Auto | Your color as everyone sees you (name tag, HUD face, outline): gold, white, sky, rose, mint, orange, violet or red. |
+| HUD faces | On | Each player's character face beside their hearts, so you can tell whose hearts are whose. |
+| Outlines | Off | Character outlines in each player's color: off (the game's own), teammates, or everyone. |
+| Teammate HUD | Auto | Teammates' HUD: everything (2 players), hearts only (3 or 4), or pick everything, hearts only, or off. |
+| Locator text | Icon only | Text on the off-screen marker: icon only, name, or name and distance. |
+| Reload text | Everyone | The game's Reload text over players: everyone, only mine, or off. |
+| Players | 2 | Host only. Players per session: 2, 3 or 4 (3 and 4 are experimental). |
 | Connection warning | Top | Shows only when the connection is not great: top, top faint, corner, corner faint, or off. |
 | Friend's crosshair | Off | The game's crosshair where your friend is aiming, in their name color. |
 | Overlay size | Normal | Size of the connection warning, locator and name tags: small, normal or large. |
-| Pausing stops everyone | Off | When on, the host pausing freezes the game for both players. |
+| Pausing stops everyone | Off | When on, the host pausing freezes the game for everyone. |
 | Port | 47624 | UDP port used when hosting. |
 
 ## For developers
