@@ -22,10 +22,11 @@ namespace GungeonOnline.Session
         public static ConfigEntry<int> LocatorStyle, NameTagStyle;
         public static ConfigEntry<bool> FriendCrosshair;
         public static ConfigEntry<int> LookFrame, LookSelect, LookTitle, LookToast;
-        public static ConfigEntry<int> ConnWarning, OverlaySize, CoopStyle, NameColor, NameOpacity;
+        public static ConfigEntry<int> ConnWarning, OverlaySize, CoopStyle, NameColor, NameOpacity, NameHeight;
         public static ConfigEntry<int> SmoothingMs;
         public static ConfigEntry<bool> SmoothFriends;
-        public static ConfigEntry<int> LocatorLabel, ReloadText;
+        public static ConfigEntry<int> LocatorLabel, ReloadText, TeammateHud, MyColor, Outlines;
+        public static ConfigEntry<bool> HudPortraits;
         public static ConfigEntry<float> CorrectionSpeed;
         public static ConfigEntry<int> WorldSnapshotHz;
         public static ConfigEntry<string> PlayerId;
@@ -54,9 +55,14 @@ namespace GungeonOnline.Session
             if (mp != null && int.TryParse(mp, out var mpi)) MaxPlayers.Value = mpi;
             var cs = System.Environment.GetEnvironmentVariable("GO_COOP_STYLE"); // harness
             if (!string.IsNullOrEmpty(cs)) { int v; if (int.TryParse(cs, out v)) CoopStyle.Value = v; }
-            NameColor = c.Bind("Interface", "NameColor", 0, new ConfigDescription("Name tag color: 0 gold, 1 white, 2 sky, 3 rose, 4 mint.", new AcceptableValueRange<int>(0, 4)));
+            NameColor = c.Bind("Interface", "NameColor", 0, new ConfigDescription("Name tag color for a friend who has not picked one: 0 gold, 1 white, 2 sky, 3 rose, 4 mint, 5 orange, 6 violet, 7 red.", new AcceptableValueRange<int>(0, 7)));
             LocatorLabel = c.Bind("Interface", "LocatorLabel", 0, new ConfigDescription("Off-screen marker text: 0 icon only (default), 1 name, 2 name and distance.", new AcceptableValueRange<int>(0, 2)));
+            MyColor = c.Bind("Interface", "MyColor", -1, new ConfigDescription("Your color, as everyone else sees you (name tag, HUD portrait, outline): -1 auto, 0 gold, 1 white, 2 sky, 3 rose, 4 mint, 5 orange, 6 violet, 7 red.", new AcceptableValueRange<int>(-1, 7)));
+            HudPortraits = c.Bind("Interface", "HudPortraits", true, "Online: each player's character face next to their hearts, in their color, so you can tell whose hearts are whose.");
+            Outlines = c.Bind("Interface", "PlayerOutlines", 0, new ConfigDescription("Character outlines in each player's color: 0 off (the game's own), 1 teammates, 2 everyone.", new AcceptableValueRange<int>(0, 2)));
+            TeammateHud = c.Bind("Interface", "TeammateHud", 0, new ConfigDescription("Your teammates' HUD: 0 auto (everything with 2 players, hearts only with 3 or 4), 1 everything, 2 hearts and blanks only, 3 off (only your own HUD).", new AcceptableValueRange<int>(0, 3)));
             ReloadText = c.Bind("Interface", "ReloadText", 0, new ConfigDescription("The game's Reload text over players: 0 everyone (default), 1 only mine, 2 off.", new AcceptableValueRange<int>(0, 2)));
+            NameHeight = c.Bind("Interface", "NameHeight", 0, new ConfigDescription("Name tag height above your friend's head: 0 close, 1 normal, 2 high.", new AcceptableValueRange<int>(0, 2)));
             NameOpacity = c.Bind("Interface", "NameOpacity", 0, new ConfigDescription("Name tag opacity: 0 100%, 1 75%, 2 50%.", new AcceptableValueRange<int>(0, 2)));
             FriendCrosshair = c.Bind("Interface", "FriendCrosshair", false, "Show the game's crosshair where your friend is aiming.");
             ConnWarning = c.Bind("Interface", "ConnectionWarning", 1, new ConfigDescription("Note when the connection is not great: 0 off, 1 top, 2 top faint, 3 corner, 4 corner faint.", new AcceptableValueRange<int>(0, 4)));

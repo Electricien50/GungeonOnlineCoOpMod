@@ -275,6 +275,14 @@ namespace GungeonOnline.Session
                     if (NetConfig.LocatorStyle.Value > 0)
                         Add("Locator text: " + Game.PartnerUI.LabelNames[NetConfig.LocatorLabel.Value], () => NetConfig.LocatorLabel.Value = (NetConfig.LocatorLabel.Value + 1) % 3, true,
                             d => NetConfig.LocatorLabel.Value = (NetConfig.LocatorLabel.Value + d + 3) % 3);
+                    Add("Your color: " + (NetConfig.MyColor.Value < 0 ? "Auto" : Game.PartnerUI.ColorNames[NetConfig.MyColor.Value]), () => NetConfig.MyColor.Value = (NetConfig.MyColor.Value + 2) % 9 - 1, true,
+                        d => NetConfig.MyColor.Value = (NetConfig.MyColor.Value + 1 + d + 9) % 9 - 1);
+                    Add("HUD faces: " + (NetConfig.HudPortraits.Value ? "On" : "Off"), () => NetConfig.HudPortraits.Value = !NetConfig.HudPortraits.Value, true,
+                        d => NetConfig.HudPortraits.Value = !NetConfig.HudPortraits.Value);
+                    Add("Outlines: " + OutlineNames[NetConfig.Outlines.Value], () => NetConfig.Outlines.Value = (NetConfig.Outlines.Value + 1) % 3, true,
+                        d => NetConfig.Outlines.Value = (NetConfig.Outlines.Value + d + 3) % 3);
+                    Add("Teammate HUD: " + Game.NPlayers.HudPatches.TeammateHudNames[NetConfig.TeammateHud.Value], () => NetConfig.TeammateHud.Value = (NetConfig.TeammateHud.Value + 1) % 4, true,
+                        d => NetConfig.TeammateHud.Value = (NetConfig.TeammateHud.Value + d + 4) % 4);
                     Add("Reload text: " + Game.PartnerUI.ReloadNames[NetConfig.ReloadText.Value], () => NetConfig.ReloadText.Value = (NetConfig.ReloadText.Value + 1) % 3, true,
                         d => NetConfig.ReloadText.Value = (NetConfig.ReloadText.Value + d + 3) % 3);
                     Add("Name tags: " + Game.PartnerUI.TagNames[NetConfig.NameTagStyle.Value], () => NetConfig.NameTagStyle.Value = Cycle(TagOrder, NetConfig.NameTagStyle.Value, 1), true,
@@ -285,6 +293,8 @@ namespace GungeonOnline.Session
                             d => NetConfig.NameColor.Value = (NetConfig.NameColor.Value + d + Game.PartnerUI.ColorNames.Length) % Game.PartnerUI.ColorNames.Length);
                         Add("Name opacity: " + OpacityNames[NetConfig.NameOpacity.Value], () => NetConfig.NameOpacity.Value = (NetConfig.NameOpacity.Value + 1) % 3, true,
                             d => NetConfig.NameOpacity.Value = (NetConfig.NameOpacity.Value + d + 3) % 3);
+                        Add("Name height: " + HeightNames[NetConfig.NameHeight.Value], () => NetConfig.NameHeight.Value = (NetConfig.NameHeight.Value + 1) % 3, true,
+                            d => NetConfig.NameHeight.Value = (NetConfig.NameHeight.Value + d + 3) % 3);
                     }
                     Add("Crosshair: " + (NetConfig.FriendCrosshair.Value ? "On" : "Off"), () => NetConfig.FriendCrosshair.Value = !NetConfig.FriendCrosshair.Value, true,
                         d => NetConfig.FriendCrosshair.Value = !NetConfig.FriendCrosshair.Value);
@@ -316,6 +326,7 @@ namespace GungeonOnline.Session
                         NetConfig.NameColor.Value = (int)NetConfig.NameColor.DefaultValue;
                         NetConfig.FriendCrosshair.Value = (bool)NetConfig.FriendCrosshair.DefaultValue;
                         NetConfig.NameOpacity.Value = (int)NetConfig.NameOpacity.DefaultValue;
+                        NetConfig.NameHeight.Value = (int)NetConfig.NameHeight.DefaultValue;
                         NetConfig.ConnWarning.Value = (int)NetConfig.ConnWarning.DefaultValue;
                         NetConfig.OverlaySize.Value = (int)NetConfig.OverlaySize.DefaultValue;
                         Toasts.Show("Settings reset");
@@ -616,6 +627,8 @@ namespace GungeonOnline.Session
         static readonly int[] LocatorOrder = { 5, 1, 0 };   // pickup tag (default), speech bubble, off
         static readonly int[] TagOrder = { 9, 1, 6, 0 };     // above faint (default), above, below feet, off
         static readonly string[] OpacityNames = { "100%", "75%", "50%" };
+        static readonly string[] OutlineNames = { "Off", "Teammates", "Everyone" };
+        static readonly string[] HeightNames = { "Close", "Normal", "High" };
 
         static int NextLocator(int cur, int d) => Cycle(LocatorOrder, cur, d);
 
@@ -736,17 +749,18 @@ namespace GungeonOnline.Session
             float y = corner ? UnityEngine.Screen.height - 72 * GungeonUI.Px : 6 * GungeonUI.Px;
             // One short line, however many friends: the worst connection sets the colour.
             var bad = new List<string>();
-            Color col = Color.white; float worst = -1f; string single = null;
+            Color col = Color.white; float worst = -1f; string single = null, worstName = null;
             foreach (var c in s.Node.Connections)
             {
                 string q = Quality(c, out var cc);
                 if (q == "Great") continue;
                 bad.Add($"{GungeonUI.WhoName(c)} {Shown(c):F0} ms");
                 single = $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
-                if (Shown(c) > worst) { worst = Shown(c); col = cc; }
+                if (Shown(c) > worst) { worst = Shown(c); col = cc; worstName = $"{GungeonUI.WhoName(c)} {Shown(c):F0} ms"; }
             }
             if (bad.Count == 0) return;
-            string text = s.Node.Connections.Count > 1 ? "Slow connection: " + string.Join(", ", bad.ToArray()) : single;
+            // Several friends: only the slowest, so the line stays short between the hearts.
+            string text = s.Node.Connections.Count > 1 ? "Slow: " + worstName + (bad.Count > 1 ? $" (+{bad.Count - 1})" : "") : single;
             col.a = alpha;
             if (corner) GungeonUI.Text(text, new Vector2(8 * GungeonUI.Px, y), GungeonUI.Font.Small, col, scale);
             else GungeonUI.TextCentered(text, UnityEngine.Screen.width / 2f, y, GungeonUI.Font.Small, col, scale);

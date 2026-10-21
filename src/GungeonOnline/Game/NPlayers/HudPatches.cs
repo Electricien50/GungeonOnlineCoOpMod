@@ -127,6 +127,150 @@ namespace GungeonOnline.Game.NPlayers
             }
         }
 
+        public static readonly string[] TeammateHudNames = { "Auto", "Everything", "Hearts only", "Off" };
+        static int lastHudMode = -1;
+
+        /// <summary>0 everything, 1 hearts and blanks only, 2 nothing: the setting, with Auto resolved by player count.</summary>
+        static int TeammateMode()
+        {
+            int v = Session.NetConfig.TeammateHud.Value;
+            if (v == 0) return Players.Count > 2 ? 1 : 0;
+            return v - 1;
+        }
+
+        /// <summary>
+        /// Every frame: hide the parts of teammates' HUDs the setting leaves out (the game turns its own panels back
+        /// on at times, so this keeps them off). Player 2's panels sit in the game's second slot (ammo and gun name
+        /// in the first), players 3 and 4 in their own.
+        /// </summary>
+        public static void ApplyTeammateHud()
+        {
+            var ui = GameUIRoot.Instance;
+            if (ui && ui.heartControllers != null) ApplyPortraitRoom(ui);
+            if (!ui || ui.heartControllers == null || !Session.NetSession.Active) { lastHudMode = -1; return; }
+            int mode = TeammateMode();
+            if (mode != lastHudMode)
+            {
+                bool wasHidden = lastHudMode > 0;
+                lastHudMode = mode;
+                if (wasHidden) { Restore(ui); Sync(); }
+            }
+            if (mode == 0) return;
+            for (int id = 1; id < ui.heartControllers.Count; id++)
+            {
+                bool present = false;
+                foreach (var p in Players.All) if (p.PlayerIDX == id) present = true;
+                if (!present) continue;
+                int gun = id == 1 ? 0 : id;
+                Hide(At(ui.ammoControllers, gun)); Hide(At(ui.itemControllers, id));
+                HideLabel(At(ui.gunNameLabels, gun)); HideLabel(At(ui.itemNameLabels, id));
+                if (mode == 2) { Hide(At(ui.heartControllers, id)); Hide(At(ui.blankControllers, id)); }
+            }
+        }
+
+        // ---------- Room for each player's face beside their hearts ----------
+
+        /// <summary>HUD units the face takes (0 when portraits are off).</summary>
+        public static float PortraitRoom;
+        static readonly Dictionary<int, float> shiftApplied = new Dictionary<int, float>();
+        static readonly Dictionary<int, Vector3> lastSet = new Dictionary<int, Vector3>();
+
+        public static bool PortraitsOn => Session.NetSession.Active && Session.NetConfig.HudPortraits.Value;
+
+        /// <summary>Face height compared with a heart.</summary>
+        public const float PortraitScale = 1.1f;
+
+        /// <summary>
+        /// Players 1 and 2 sit at the screen edges: slide their hearts and blanks inward by one face's width, so the
+        /// face fits on the outer side. Players 3 and 4 get the room through <see cref="PlaceBeside"/>.
+        /// </summary>
+        static void ApplyPortraitRoom(GameUIRoot ui)
+        {
+            float room = 0f;
+            if (PortraitsOn)
+            {
+                foreach (var c in Icons(ui.heartControllers[0], null))
+                {
+                    if (!c.IsVisible) continue;
+                    var sr = c.GetScreenRect();
+                    if (sr.width < 1f) continue;
+                    float unitsPerPx = c.Width / sr.width;
+                    room = (sr.height * PortraitScale + 3 * Session.GungeonUI.Px) * unitsPerPx;
+                    break;
+                }
+                if (room <= 0f) room = PortraitRoom; // no heart drawn this frame: keep the last room
+            }
+            PortraitRoom = room;
+            for (int id = 0; id < 2 && id < ui.heartControllers.Count; id++)
+            {
+                float dx = id == 0 ? room : -room;
+                Shift(ui.heartControllers[id] ? ui.heartControllers[id].GetComponent<dfControl>() : null, Icons(ui.heartControllers[id], null), dx);
+                Shift(ui.blankControllers[id] ? ui.blankControllers[id].GetComponent<dfControl>() : null, Icons(null, ui.blankControllers[id]), dx);
+            }
+        }
+
+        static void Shift(dfControl panel, List<dfControl> icons, float dx)
+        {
+            if (!panel) return;
+            int key = panel.GetInstanceID();
+            shiftApplied.TryGetValue(key, out float applied);
+            // The game put the panel back where it wants it: start counting from there.
+            if (lastSet.TryGetValue(key, out var was) && (panel.RelativePosition - was).sqrMagnitude > 0.01f) applied = 0f;
+            float delta = dx - applied;
+            if (Mathf.Abs(delta) > 0.01f)
+            {
+                var by = new Vector3(delta, 0f, 0f);
+                panel.RelativePosition += by;
+                foreach (var c in icons) c.RelativePosition += by;
+            }
+            shiftApplied[key] = dx;
+            lastSet[key] = panel.RelativePosition;
+        }
+
+        /// <summary>Screen rectangle (GUI coordinates) of a player's heart row, if it is showing.</summary>
+        public static bool HeartRow(GameUIRoot ui, int id, out Rect row)
+        {
+            row = default(Rect);
+            if (!ui || ui.heartControllers == null || id >= ui.heartControllers.Count || !ui.heartControllers[id]) return false;
+            var panel = ui.heartControllers[id].GetComponent<dfControl>();
+            if (!panel || !panel.IsVisible) return false;
+            float x0 = float.MaxValue, x1 = float.MinValue, y0 = float.MaxValue, y1 = float.MinValue;
+            foreach (var c in Icons(ui.heartControllers[id], null))
+            {
+                if (!c.IsVisible) continue;
+                var sr = c.GetScreenRect();
+                x0 = Mathf.Min(x0, sr.xMin); x1 = Mathf.Max(x1, sr.xMax); y0 = Mathf.Min(y0, sr.yMin); y1 = Mathf.Max(y1, sr.yMax);
+            }
+            if (x1 <= x0) return false;
+            row = Rect.MinMaxRect(x0, y0, x1, y1);
+            return true;
+        }
+
+        static T At<T>(List<T> list, int i) where T : class => list != null && i < list.Count ? list[i] : null;
+
+        static void Hide(Component c)
+        {
+            if (!c) return;
+            var panel = c.GetComponent<dfControl>();
+            if (panel && panel.IsVisible) panel.IsVisible = false;
+        }
+
+        static void HideLabel(dfControl c) { if (c && c.IsVisible) c.IsVisible = false; }
+
+        /// <summary>Back to everything: show player 2's panels again (players 3 and 4 follow <see cref="Sync"/>).</summary>
+        static void Restore(GameUIRoot ui)
+        {
+            bool onFloor = GameManager.HasInstance && GameManager.Instance.CurrentLevelOverrideState != GameManager.LevelOverrideState.FOYER;
+            bool two = false;
+            foreach (var p in Players.All) if (p.PlayerIDX == 1) two = true;
+            if (!onFloor || !two) return;
+            foreach (var c in new Component[] { At(ui.ammoControllers, 0), At(ui.itemControllers, 1), At(ui.heartControllers, 1), At(ui.blankControllers, 1) })
+            {
+                var panel = c ? c.GetComponent<dfControl>() : null;
+                if (panel) panel.IsVisible = true;
+            }
+        }
+
         /// <summary>Extra panels show only while that player is in and off the Breach.</summary>
         public static void Sync()
         {
@@ -155,7 +299,7 @@ namespace GungeonOnline.Game.NPlayers
         static void PlaceBeside(GameUIRoot ui, int k)
         {
             int side = k % 2;
-            const float gap = 18f;
+            float gap = 18f + PortraitRoom; // and room for this player's face, when portraits are on
             var rows = new[] { Icons(ui.heartControllers[side], ui.blankControllers[side]), Icons(ui.heartControllers[k], ui.blankControllers[k]) };
             // One shared edge for both rows (hearts and blanks), so each player's block reads as a column.
             if (!Edges(rows[0], out float l0, out float r0)) return;

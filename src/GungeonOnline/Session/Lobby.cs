@@ -11,7 +11,10 @@ namespace GungeonOnline.Session
     /// </summary>
     internal sealed class Lobby : MonoBehaviour
     {
-        const byte MsgChoice = 1, MsgRoster = 2, MsgAim = 3, MsgStyle = 4;
+        const byte MsgChoice = 1, MsgRoster = 2, MsgAim = 3, MsgStyle = 4, MsgColor = 6; // 5 is PeerLanes
+        /// <summary>Each player's own color pick (-1 auto), keyed by slot.</summary>
+        public static readonly Dictionary<int, int> Colors = new Dictionary<int, int>();
+        int sentColor = -2;
 
         public sealed class Entry { public string Prefab = ""; public string Name = ""; }
         public readonly Dictionary<int, Entry> Roster = new Dictionary<int, Entry>();
@@ -35,7 +38,7 @@ namespace GungeonOnline.Session
         {
             var s = NetSession.Instance;
             s.On(Channel.Lobby, OnMessage);
-            s.PeerJoined += c => { if (NetSession.IsHost) { SendRoster(); SendAllAim(c); sentStyle = -1; } else sentChoice = null; sentAim = null; };
+            s.PeerJoined += c => { if (NetSession.IsHost) { SendRoster(); SendAllAim(c); SendAllColors(c); sentStyle = -1; } else sentChoice = null; sentAim = null; sentColor = -2; };
             s.PeerLeft += (c, why) =>
             {
                 if (!NetSession.IsHost) return;
@@ -47,7 +50,7 @@ namespace GungeonOnline.Session
                 PlayerSlots.Despawn(c.Slot);
                 SendRoster();
             };
-            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); HostCoopStyle = -1; sentStyle = -1; HostMaxPlayers = -1; sentMax = -1; PlayerSlots.Clear(); };
+            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); Colors.Clear(); sentColor = -2; HostCoopStyle = -1; sentStyle = -1; HostMaxPlayers = -1; sentMax = -1; PlayerSlots.Clear(); };
         }
 
         static string PrefabOf(PlayerController p)
@@ -101,7 +104,7 @@ namespace GungeonOnline.Session
                 }
             }
             if (NetSession.IsHost && (NetConfig.CoopStyle.Value != sentStyle || NetConfig.MaxPlayers.Value != sentMax)) SendStyle();
-            if (Time.realtimeSinceStartup >= nextAimCheck && local != null) { nextAimCheck = Time.realtimeSinceStartup + 1f; CheckAim(); }
+            if (Time.realtimeSinceStartup >= nextAimCheck && local != null) { nextAimCheck = Time.realtimeSinceStartup + 1f; CheckAim(); CheckColor(); }
             // Spawn anyone we know about but have not spawned (our own player may have appeared late).
             if (local != null)
                 foreach (var kv in Roster)
@@ -120,6 +123,27 @@ namespace GungeonOnline.Session
             bool super = false;
             try { super = BraveInput.AutoAimMode == BraveInput.AutoAim.SuperAutoAim; } catch { } // no input instance yet at boot
             return new AimPrefs { Assist = o.controllerAimAssistMultiplier, Beam = o.controllerBeamAimAssist, Super = super };
+        }
+
+        void CheckColor()
+        {
+            int mine = NetConfig.MyColor.Value;
+            if (mine == sentColor) return;
+            sentColor = mine;
+            Colors[NetSession.LocalSlot] = mine;
+            NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, ColorMsg(NetSession.LocalSlot, mine), Delivery.ReliableOrdered);
+        }
+
+        static byte[] ColorMsg(int slot, int color)
+        {
+            var w = new WireWriter(8);
+            w.U8(MsgColor); w.U8((byte)slot); w.U8((byte)(color + 1));
+            return w.ToArray();
+        }
+
+        void SendAllColors(Connection to)
+        {
+            foreach (var kv in Colors) to.Send((byte)Channel.Lobby, ColorMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
         }
 
         void CheckAim()
@@ -172,6 +196,17 @@ namespace GungeonOnline.Session
                 if (HostCoopStyle >= 0 && v != HostCoopStyle) Toasts.Show("The host switched to " + (v == 0 ? "Classic" : "Explore") + " co-op");
                 HostCoopStyle = v;
                 if (r.Remaining > 0) HostMaxPlayers = r.U8();
+                return;
+            }
+            if (type == MsgColor)
+            {
+                int slot = r.U8(), color = r.U8() - 1;
+                if (NetSession.IsHost) slot = c.Slot;
+                if (slot == NetSession.LocalSlot) return;
+                Colors[slot] = color;
+                if (NetSession.IsHost)
+                    foreach (var o in NetSession.Instance.Node.Connections)
+                        if (o != c) o.Send((byte)Channel.Lobby, ColorMsg(slot, color), Delivery.ReliableOrdered);
                 return;
             }
             if (type == MsgAim)

@@ -14,8 +14,8 @@ namespace GungeonOnline.Game
     internal sealed class PartnerUI : MonoBehaviour
     {
         public static readonly string[] LocatorNames = { "Off", "Speech bubble", "Gun sight", "Minimap head", "Orbit arrow", "Pickup tag" };
-        public static readonly string[] ColorNames = { "Gold", "White", "Sky", "Rose", "Mint" };
-        static readonly Color[] NameColors = { new Color(1f, 0.82f, 0.33f), new Color(0.96f, 0.95f, 0.92f), new Color(0.48f, 0.78f, 1f), new Color(1f, 0.55f, 0.66f), new Color(0.5f, 0.95f, 0.66f) };
+        public static readonly string[] ColorNames = { "Gold", "White", "Sky", "Rose", "Mint", "Orange", "Violet", "Red" };
+        static readonly Color[] NameColors = { new Color(1f, 0.82f, 0.33f), new Color(0.96f, 0.95f, 0.92f), new Color(0.48f, 0.78f, 1f), new Color(1f, 0.55f, 0.66f), new Color(0.5f, 0.95f, 0.66f), new Color(1f, 0.6f, 0.25f), new Color(0.76f, 0.58f, 1f), new Color(1f, 0.36f, 0.32f) };
         public static readonly string[] LabelNames = { "Icon only", "Name", "Name and distance" };
         public static readonly string[] ReloadNames = { "Everyone", "Only mine", "Off" };
 
@@ -38,7 +38,7 @@ namespace GungeonOnline.Game
         static Rect view;
         static Vector2 ToGui(Vector3 vp) => new Vector2(view.x + vp.x * view.width, view.y + (1f - vp.y) * view.height);
 
-        public static readonly string[] TagNames = { "Off", "Above", "Above, outline", "Above, large", "Above, pointer", "Above, ornament", "Below feet", "Beside", "Above, strip", "Above, faint", "Above, with head" };
+        public static readonly string[] TagNames = { "Off", "Above", "Above, outline", "Above, large", "Above, pointer", "Above, ornament", "Below feet", "Beside", "Above, strip", "Above, plain", "Above, with head" };
 
         Lobby lobby;
         readonly Dictionary<int, float> onScreenFade = new Dictionary<int, float>();
@@ -61,7 +61,9 @@ namespace GungeonOnline.Game
         void Start()
         {
             // Screenshots: show both helpers.
-            if (System.Environment.GetEnvironmentVariable("GO_SHOT_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.NameTagStyle.Value = 1; NetConfig.FriendCrosshair.Value = true; }
+            if (System.Environment.GetEnvironmentVariable("GO_SHOT_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.FriendCrosshair.Value = true; }
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("GO_OUTLINES"), out var ol)) NetConfig.Outlines.Value = ol;
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("GO_MY_COLOR"), out var mc)) NetConfig.MyColor.Value = mc;
             // Harness: GO_SHOT_UI="locator,tag,opacity,crosshair" for front-page screenshots, e.g. "5,1,1,0".
             var su = System.Environment.GetEnvironmentVariable("GO_SHOT_UI");
             if (!string.IsNullOrEmpty(su))
@@ -75,9 +77,70 @@ namespace GungeonOnline.Game
             }
         }
 
+        void LateUpdate()
+        {
+            NPlayers.HudPatches.ApplyTeammateHud();
+            ApplyOutlines();
+        }
+
+        // ---------- Outlines in each player's color ----------
+
+        static readonly HashSet<int> recolored = new HashSet<int>();
+
+        static void ApplyOutlines()
+        {
+            if (!GameManager.HasInstance || GameManager.Instance.AllPlayers == null) return;
+            int mode = NetSession.Active ? NetConfig.Outlines.Value : 0;
+            if (mode == 0 && recolored.Count == 0) return;
+            foreach (var p in GameManager.Instance.AllPlayers)
+            {
+                if (!p || !p.sprite) continue;
+                int id = p.GetInstanceID();
+                bool mine = mode == 2 || (mode == 1 && p != PlayerSlots.Local);
+                if (!mine && !recolored.Contains(id)) continue;
+                var mat = SpriteOutlineManager.GetOutlineMaterial(p.sprite);
+                if (!mat || !mat.HasProperty("_OverrideColor")) continue;
+                Color want = mine ? ColorFor(p) : p.outlineColor;
+                if (mine) want.a = 1f;
+                if (mat.GetColor("_OverrideColor") != want) mat.SetColor("_OverrideColor", want);
+                if (mine) recolored.Add(id); else recolored.Remove(id);
+            }
+        }
+
+        // ---------- Faces beside the hearts ----------
+
+        static void DrawPortraits()
+        {
+            if (!NPlayers.HudPatches.PortraitsOn || !GameManager.HasInstance || GameManager.Instance.AllPlayers == null) return;
+            var ui = GameUIRoot.Instance;
+            if (!ui) return;
+            int px = GungeonUI.Px;
+            foreach (var p in GameManager.Instance.AllPlayers)
+            {
+                if (!p || !NPlayers.HudPatches.HeartRow(ui, p.PlayerIDX, out var row)) continue;
+                string head = Head(p);
+                var hs = GungeonUI.SpriteSize(head);
+                if (hs.y <= 0) continue;
+                float h = row.height * NPlayers.HudPatches.PortraitScale, w = hs.x * h / hs.y;
+                bool left = p.PlayerIDX % 2 == 0;
+                float x = left ? row.xMin - w - 1.5f * px : row.xMax + 1.5f * px;
+                float y = row.center.y - h / 2f;
+                var col = ColorFor(p);
+                // A strip in their color under the face, so the face, the name tag and the outline all match.
+                var old = GUI.color;
+                GUI.color = new Color(0f, 0f, 0f, 0.6f);
+                GUI.DrawTexture(new Rect(x - px, y + h - px, w + 2 * px, 3 * px), Texture2D.whiteTexture);
+                GUI.color = new Color(col.r, col.g, col.b, 1f);
+                GUI.DrawTexture(new Rect(x, y + h, w, px), Texture2D.whiteTexture);
+                GUI.color = old;
+                GungeonUI.Sprite(head, new Rect(x, y, w, h), Color.white);
+            }
+        }
+
         void OnGUI()
         {
             if (Event.current.type != EventType.Repaint) return;
+            if (NetSession.Active && GungeonUI.Ready && !OnlineMenu.IsOpen && GameManager.HasInstance && !GameManager.Instance.IsLoadingLevel && !GameManager.Instance.IsPaused) DrawPortraits();
             int loc = NetConfig.LocatorStyle.Value, tag = NetConfig.NameTagStyle.Value;
             bool cross = NetConfig.FriendCrosshair.Value;
             if (loc <= 0 && tag <= 0 && !cross) return;
@@ -110,7 +173,9 @@ namespace GungeonOnline.Game
                 if (tag > 0 && onA > 0.01f)
                 {
                     // Anchor on the feet: sprite boxes include empty space above the head. Characters are about 22 px tall.
-                    var head = ToGui(vf) - new Vector2(0, 24 * GungeonUI.Px);
+                    // Name height: close sits just over the hair, normal and high leave more room.
+                    up = NetConfig.NameHeight.Value == 2 ? 30 : NetConfig.NameHeight.Value == 1 ? 24 : 19;
+                    var head = ToGui(vf) - new Vector2(0, up * GungeonUI.Px);
                     DrawTag(tag, p, name, head, onA);
                 }
                 if (cross && onA > 0.01f && !p.IsGhost && p.CurrentGun)
@@ -129,14 +194,20 @@ namespace GungeonOnline.Game
         }
 
         /// <summary>Your chosen colour for the first friend; each further friend gets the next colour, so tags tell them apart.</summary>
-        static Color ColorFor(PlayerController p)
+        public static Color ColorFor(PlayerController p)
         {
             int slot = PlayerSlots.SlotOf(p), before = 0;
+            // Everyone's own pick, as they chose it in their game.
+            if (p == PlayerSlots.Local && NetConfig.MyColor.Value >= 0) return NameColors[NetConfig.MyColor.Value];
+            if (Session.Lobby.Colors.TryGetValue(slot, out var picked) && picked >= 0 && picked < NameColors.Length) return NameColors[picked];
+            if (p == PlayerSlots.Local) return NameColors[0];
             foreach (var kv in PlayerSlots.Remotes) if (kv.Key < slot) before++;
             return NameColors[(Mathf.Clamp(NetConfig.NameColor.Value, 0, NameColors.Length - 1) + before) % NameColors.Length];
         }
 
         // ---------- Name tags (on screen) ----------
+
+        static int up = 19; // game pixels from the feet to the tag's anchor
 
         void DrawTag(int style, PlayerController p, string name, Vector2 head, float a)
         {
@@ -147,7 +218,7 @@ namespace GungeonOnline.Game
             var gold = new Color(pick.r, pick.g, pick.b, a);
             var font = style == 3 ? GungeonUI.Font.Menu : GungeonUI.Font.Small;
             var size = GungeonUI.Measure(name, font);
-            Vector2 feet = head + new Vector2(0, 24 * px);
+            Vector2 feet = head + new Vector2(0, up * px);
             switch (style)
             {
                 case 2: Outlined(name, new Vector2(head.x - size.x / 2f, head.y - lift - size.y), font, gold); break;
@@ -181,7 +252,7 @@ namespace GungeonOnline.Game
                         GungeonUI.Text(name, new Vector2(head.x - size.x / 2f, r.y + px), font, gold);
                         break;
                     }
-                case 9: GungeonUI.Text(name, new Vector2(head.x - size.x / 2f, head.y - lift - size.y), font, new Color(gold.r, gold.g, gold.b, 0.55f * a), 1f, false); break;
+                case 9: GungeonUI.Text(name, new Vector2(head.x - size.x / 2f, head.y - lift - size.y), font, gold, 1f, false); break;
                 case 10:
                     {
                         var hs = GungeonUI.SpriteSize(Head(p));
