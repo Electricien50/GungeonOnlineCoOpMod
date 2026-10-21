@@ -11,7 +11,9 @@
 - Classic style pulls everyone into the fight; Explore stays one fight at a time.
 - Rooms stay lit and active for every player, room-clear rewards reach everyone, and players 3 and 4 get credit for their own kills, damage and synergies.
 - Enemy health scales with the player count: 1.25x for 2 (the game's own), 1.5x for 3, 1.75x for 4 (host settings).
-- Each friend gets their own name-tag colour, starting from the one you chose.
+- *Your color* (8 choices) is shared with everyone: your name tag, outline and HUD face use it.
+- *HUD faces*: each player's character face beside their hearts. *Outlines*: off, teammates, or everyone, in each player's color.
+- *Teammate HUD*: everything, hearts only, or off. Name tags are solid, close above the head, with a *Name height* option.
 - Stays two-player: the game's own mid-run save (the mod's run backups cover everyone), couch co-op on one PC, the boss card portraits.
 
 **Smoother motion on uneven connections**

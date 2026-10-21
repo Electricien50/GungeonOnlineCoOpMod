@@ -424,6 +424,7 @@ namespace GungeonOnline.Replication
                     ProjectileSync.Instance?.SendAllTo(c);
                     InventorySync.Instance?.ForceResend();
                     VitalsSync.Instance?.ForceResend();
+                    VitalsSync.Instance?.SendDeathsTo(c);
                     Plugin.Log.LogInfo($"WorldSync: slot {c.Slot} ready");
                 }
                 return;

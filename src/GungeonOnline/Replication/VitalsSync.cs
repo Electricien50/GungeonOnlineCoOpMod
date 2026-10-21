@@ -152,8 +152,12 @@ namespace GungeonOnline.Replication
             return false;
         }
 
+        /// <summary>Every Die that ran on this machine (a postfix runs even when a prefix replaced the game's own).</summary>
+        static int diesRun;
+
         static void DiedPostfix(PlayerController __instance)
         {
+            diesRun++;
             // Also while applying a guest's own fatal hit (scope): with three or four players the other guests
             // learn that death only from the host. The guest who died is never told about itself.
             if (!IsHostSession || Instance == null) return;
@@ -172,6 +176,26 @@ namespace GungeonOnline.Replication
             var w = Instance.w;
             w.Reset(); w.U8(EvPlayerRevived); w.U8((byte)slot); w.F32(chestBottomCenter.x); w.F32(chestBottomCenter.y);
             Instance.SendReady(w.ToArray());
+        }
+
+        /// <summary>
+        /// Host: a guest just (re)joined the floor. Tell it who is down, its own player included: a guest that crashed
+        /// as the last player fell comes back from its backup alive, in a run that is already over everywhere else.
+        /// Its own death goes last, so when nobody else is left it ends the run there too.
+        /// </summary>
+        public void SendDeathsTo(Connection c)
+        {
+            byte[] own = null;
+            foreach (var p in Game.NPlayers.Players.All)
+            {
+                if (!p || p.healthHaver == null || !(p.IsGhost || p.healthHaver.IsDead)) continue;
+                int slot = PlayerSlots.SlotOf(p);
+                if (slot < 0) continue;
+                w.Reset(); w.U8(EvPlayerDied); w.U8((byte)slot);
+                if (slot == c.Slot) own = w.ToArray();
+                else c.Send((byte)Channel.Event, w.ToArray(), Delivery.ReliableOrdered);
+            }
+            if (own != null) c.Send((byte)Channel.Event, own, Delivery.ReliableOrdered);
         }
 
         void SendReady(byte[] msg, int exceptSlot = -1)
@@ -196,6 +220,7 @@ namespace GungeonOnline.Replication
                 var p = PlayerSlots.ForSlot(c.Slot);
                 hurtApplied[c.Slot] = seq;
                 if (!p || p.healthHaver == null) return;
+                int diesBefore = diesRun;
                 scope = true;
                 try
                 {
@@ -205,7 +230,8 @@ namespace GungeonOnline.Replication
                     p.healthHaver.Armor = armorAfter;
                     // The owner saw this hit kill; if this copy's own checks (i-frames, invulnerability) skipped the
                     // death, run it now so ghost mode, the co-op item drop and game over follow as on the owner's side.
-                    if (hpAfter <= 0f && armorAfter <= 0f && !p.IsGhost && !dyingSent.Contains(c.Slot))
+                    // Not when the hit itself just ran the death: the ghost only appears a moment later.
+                    if (hpAfter <= 0f && armorAfter <= 0f && !p.IsGhost && diesRun == diesBefore && !dyingSent.Contains(c.Slot))
                     {
                         dyingSent.Add(c.Slot);
                         p.healthHaver.Die(dir);
@@ -218,8 +244,9 @@ namespace GungeonOnline.Replication
             else if (type == EvPlayerDied && !NetSession.IsHost)
             {
                 int slot = r.U8();
-                if (slot == NetSession.LocalSlot) return; // our own death already ran here
-                var p = PlayerSlots.ForSlot(slot);
+                // Our own death normally ran here first and is never echoed; the host names us only after we rejoined.
+                var p = slot == NetSession.LocalSlot ? PlayerSlots.Local : PlayerSlots.ForSlot(slot);
+                if (slot == NetSession.LocalSlot) Plugin.Log.LogInfo("Vitals: the host says we are down (rejoined after our death)");
                 // Not IsDead: a health update can set this copy to 0 before this event lands, and the death (ghost,
                 // or game over when nobody is left) must still run here exactly once.
                 if (!p || p.healthHaver == null || p.IsGhost || deathRun.Contains(slot)) return;
