@@ -14,6 +14,12 @@
 - Each friend gets their own name-tag colour, starting from the one you chose.
 - Stays two-player: the game's own mid-run save (the mod's run backups cover everyone), couch co-op on one PC, the boss card portraits.
 
+**Smoother motion on uneven connections**
+- When a friend's input arrives late, their character slides into place instead of hopping; on the guest's screen, enemies, enemy bullets and empty mine carts do the same when an update from the host lands. Only the look changes: where things really are, and what they hit, is exact. Measured on jittery connections: 2 to 4 times less on-screen jerk, no added delay. Option: *SmoothFriendMotion* (on).
+- Steam connections now time packets by when they really arrive, so a slow frame on your PC is no longer mistaken for a bad connection.
+- Network timing stays exact however long the game has been open (the game's own clock gets coarser after a few hours).
+- Fixed: some enemy bullets (from enemy guns, and from enemies the game placed itself) showed with the wrong look on the guest's screen.
+
 ## 1.0.4
 
 **Fixes**

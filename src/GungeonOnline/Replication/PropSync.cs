@@ -193,6 +193,9 @@ namespace GungeonOnline.Replication
                 var me = PlayerSlots.Local;
                 if (me && me.currentMineCart == cart) continue;
                 if (((Vector2)cart.transform.position - p).sqrMagnitude < 0.0025f) continue;
+                bool ridden = false;
+                foreach (var pl in GameManager.Instance.AllPlayers) if (pl && pl.currentMineCart == cart) ridden = true;
+                if (ridden) DrawSmoothing.Clear(cart); else DrawSmoothing.Corrected(cart, cart.transform.position, p);
                 cart.transform.position = new Vector3(p.x, p.y, cart.transform.position.z);
                 if (cart.specRigidbody) cart.specRigidbody.Reinitialize();
                 CartUpdates++;

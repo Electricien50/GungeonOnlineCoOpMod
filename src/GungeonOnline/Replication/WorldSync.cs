@@ -39,8 +39,9 @@ namespace GungeonOnline.Replication
         sealed class Replica
         {
             public AIActor Actor;
-            public Vector2 Target, Velocity;
-            public float TargetTime;
+            public Vector2 Target, Velocity, OldTarget, OldVelocity;
+            public float OldTime;
+            public float TargetTime, MovedFor = -1f; // MovedFor: the snapshot the last move used
             public int Clip;
         }
         readonly Dictionary<uint, Replica> replicas = new Dictionary<uint, Replica>();
@@ -542,6 +543,7 @@ namespace GungeonOnline.Replication
                 byte flags = r.U8();
                 byte hp = r.U8();
                 if (stale || !replicas.TryGetValue(id, out var rep) || !rep.Actor) continue;
+                rep.OldTarget = rep.Target; rep.OldVelocity = rep.Velocity; rep.OldTime = rep.TargetTime;
                 rep.Target = pos; rep.Velocity = vel; rep.TargetTime = now;
                 var a = rep.Actor;
                 if (clip != 0 && clip != rep.Clip && a.spriteAnimator != null && a.spriteAnimator.Library != null)
@@ -569,6 +571,10 @@ namespace GungeonOnline.Replication
                 Vector2 want = rep.Target + rep.Velocity * age;
                 Vector2 cur = a.transform.position;
                 if ((want - cur).sqrMagnitude < 1e-6f) continue;
+                // A new update: where the last one's guess would have drawn the enemy now, versus where it really is.
+                if (rep.MovedFor >= 0f && rep.MovedFor != rep.TargetTime)
+                    DrawSmoothing.Corrected(a, rep.OldTarget + rep.OldVelocity * Mathf.Min(0.1f, now - rep.OldTime), want);
+                rep.MovedFor = rep.TargetTime;
                 a.transform.position = new Vector3(want.x, want.y, a.transform.position.z);
                 if (a.specRigidbody) a.specRigidbody.Reinitialize();
             }

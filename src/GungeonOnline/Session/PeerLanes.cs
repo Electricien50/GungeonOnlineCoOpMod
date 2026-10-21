@@ -47,7 +47,7 @@ namespace GungeonOnline.Session
             s.SessionEnded += () => { lanes.Clear(); KnownSteamIds.Clear(); token = 0; wired = null; };
         }
 
-        static double Now => Time.realtimeSinceStartup;
+        static double Now => Net.Clock.Now;
 
         void Update()
         {

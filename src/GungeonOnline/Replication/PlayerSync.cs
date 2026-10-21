@@ -110,6 +110,7 @@ namespace GungeonOnline.Replication
         public void Place(int slot, PlayerController p, InputSync.Stream s)
         {
             var t = T(slot);
+            if (p.IsFalling || p.currentMineCart) DrawSmoothing.Clear(p);
             if (p.IsFalling || (s.PlaceState & InputSync.StateFalling) != 0) fallSeen[slot] = Time.realtimeSinceStartup;
             // Host: something in our game moved the copy between the end of the last frame and now (a warp that ran
             // before the input poll this frame). That is a deliberate move too: order it, and do not put the copy back.
@@ -136,6 +137,7 @@ namespace GungeonOnline.Replication
                         t.LastJumpLog = Time.realtimeSinceStartup;
                         Plugin.Log.LogInfo($"PLACE slot={slot} jump={jump:F2} roll={p.IsDodgeRolling} starved={s.Starved} merged={s.Merged} late={s.LastLateMs:F0}ms epoch={s.PlaceEpoch}/{t.ExpectedEpoch} sinceMove={Time.realtimeSinceStartup - t.LastMoveAt:F2}s");
                     }
+                    if (jump > 0.0001f) DrawSmoothing.Corrected(p, at, s.PlacePos);
                     if (jump > 0.0001f)
                     {
                         p.transform.position = new Vector3(s.PlacePos.x, s.PlacePos.y, p.transform.position.z);
@@ -160,6 +162,8 @@ namespace GungeonOnline.Replication
         {
             if (!NetSession.Active) return;
             Camera.IndependentCamera.Apply();
+            DrawSmoothing.Tick();
+            foreach (var kv in PlayerSlots.Remotes) if (kv.Value && !kv.Value.IsFalling && !kv.Value.currentMineCart) DrawSmoothing.Measure(kv.Value);
             if (NetSession.IsHost)
             {
                 DetectHostMoves();

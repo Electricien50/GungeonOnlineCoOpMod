@@ -262,6 +262,7 @@ namespace GungeonOnline.Replication
                         var pos = new Vector2(r.F32(), r.F32());
                         var vel = new Vector2(r.F32(), r.F32());
                         if (!copies.TryGetValue(id, out var p) || !p) { copies.Remove(id); return; }
+                        DrawSmoothing.Corrected(p, p.transform.position, pos);
                         p.transform.position = new Vector3(pos.x, pos.y, p.transform.position.z);
                         if (p.specRigidbody) p.specRigidbody.Reinitialize();
                         SetVelocity(p, vel);

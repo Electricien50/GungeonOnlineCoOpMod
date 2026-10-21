@@ -19,6 +19,7 @@ namespace GungeonOnline
         {
             Instance = this;
             Log = Logger;
+            var clockStart = Net.Clock.Now; // start the network clock on the game thread
             Session.NetConfig.Bind(Config);
             Dev.DevEnv.Load();
             harmony = new Harmony(Guid);

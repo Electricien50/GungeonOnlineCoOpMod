@@ -710,7 +710,7 @@ namespace GungeonOnline.Dev
                         string rp = kv.Value ? kv.Value.transform.position.ToString("F2") : "dead";
                         net += $" remote{kv.Key}={rp}";
                         if (Replication.InputSync.Instance.Streams.TryGetValue(kv.Key, out var st))
-                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms lag={st.PollLagMs:F1}ms{Replication.InputSync.E2eText(st)} lane={(Session.PeerLanes.IsDirect(kv.Key) ? "direct" : "relay")} fresh={st.FreshDirect}/{st.FreshRelay} last={st.Last}]";
+                            net += $" in{kv.Key}[applied={st.Applied} starved={st.Starved} held={st.Held} merged={st.Merged} buf={st.BufferMs:F1}ms jit={st.JitterMs:F1}ms late={st.LastLateMs:F1}ms lag={st.PollLagMs:F1}ms{Replication.InputSync.E2eText(st)} lane={(Session.PeerLanes.IsDirect(kv.Key) ? "direct" : "relay")} fresh={st.FreshDirect}/{st.FreshRelay} last={st.Last}]";
                         if (kv.Value)
                         {
                             var bi = BraveInput.GetInstanceForPlayer(kv.Value.PlayerIDX);
@@ -728,6 +728,7 @@ namespace GungeonOnline.Dev
                     var ws = Replication.WorldSync.Instance;
                     if (ws != null) net += $" world[ready={ws.ReadyPeers} tracked={ws.TrackedCount} replicas={ws.ReplicaCount} spawnsSent={ws.SpawnsSent} spawnsApplied={ws.SpawnsApplied} deathsSent={ws.DeathsSent} deathsApplied={ws.DeathsApplied} snaps={ws.SnapshotsApplied} localSuppressed={ws.LocalActorsSuppressed} spawnFail={ws.SpawnFailures} enemies={StaticReferenceManager.AllEnemies.Count}]";
                     var ps = Replication.ProjectileSync.Instance;
+                    net += " draw[" + Replication.DrawSmoothing.Stats() + "]";
                     if (ps != null) net += $" proj[announced={ps.Announced} sent={ps.Sent} updates={ps.Updates} copies={ps.Copies} resent={ps.Resent} early={ps.EarlyDeaths} hitMe={ps.EarlyNearMe} suppressed={ps.LocalSuppressed} unknown={ps.UnknownPrefabs}]";
                     var pk = Replication.PickupSync.Instance;
                     if (pk != null) net += $" pick[ann={pk.PickupsAnnounced} copies={pk.PickupsCopied} purged={pk.LocalPurged} req={pk.Requests} gives={pk.Gives} givesApplied={pk.GivesApplied} chests={pk.ChestsMapped} chestOpened={pk.ChestsOpened}]";

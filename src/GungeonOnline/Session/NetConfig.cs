@@ -24,6 +24,7 @@ namespace GungeonOnline.Session
         public static ConfigEntry<int> LookFrame, LookSelect, LookTitle, LookToast;
         public static ConfigEntry<int> ConnWarning, OverlaySize, CoopStyle, NameColor, NameOpacity;
         public static ConfigEntry<int> SmoothingMs;
+        public static ConfigEntry<bool> SmoothFriends;
         public static ConfigEntry<int> LocatorLabel, ReloadText;
         public static ConfigEntry<float> CorrectionSpeed;
         public static ConfigEntry<int> WorldSnapshotHz;
@@ -80,6 +81,7 @@ namespace GungeonOnline.Session
             SmoothingMs = c.Bind("Network", "OtherPlayerSmoothingMs", -1, new ConfigDescription(
                 "Buffer for other players' input, in ms. -1 = Auto (sized from measured jitter, recommended). 0 = lowest latency, may stutter on a jittery link. Your own character is never delayed.",
                 new AcceptableValueRange<int>(-1, 100)));
+            SmoothFriends = c.Bind("Network", "SmoothFriendMotion", true, "When a friend's input arrives late, their character slides into place instead of hopping. Only how it looks: where they really are is unchanged.");
             CorrectionSpeed = c.Bind("Network", "CorrectionSpeed", 0.25f, new ConfigDescription(
                 "How fast small position differences from the host are blended out per frame. Lower = smoother, higher = tighter.",
                 new AcceptableValueRange<float>(0.05f, 1f)));

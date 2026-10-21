@@ -92,7 +92,7 @@ namespace GungeonOnline.Session
             }
         }
 
-        public static double Now => Time.realtimeSinceStartup;
+        public static double Now => Net.Clock.Now;
 
         void Awake()
         {
@@ -495,7 +495,7 @@ namespace GungeonOnline.Session
             Leave();
         }
 
-        void OnApplicationQuit() => Leave("game closed");
+        void OnApplicationQuit() { SteamDatagramSocket.Quitting = true; Leave("game closed"); }
     }
 
     /// <summary>Sends everything queued this frame after all gameplay and physics have run.</summary>

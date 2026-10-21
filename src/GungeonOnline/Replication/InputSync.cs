@@ -42,6 +42,9 @@ namespace GungeonOnline.Replication
             public double JitterMs;
             public double BufferMs;
             public int Starved, Merged, Applied;
+            public int Held;              // frames with nothing new (also when the sender just runs at a lower frame rate)
+            public double SendGapMs = 16; // average time between the sender's frames
+            public uint LastFreshStamp;
             public int FreshDirect, FreshRelay; // which route delivered a new frame first
             public double LastLateMs; // how long the applied frame waited after it was due
             public double PollLagMs;  // average time a packet sat waiting for the frame to start (no longer counted as jitter)
@@ -58,6 +61,8 @@ namespace GungeonOnline.Replication
         static readonly bool measureE2E = System.Environment.GetEnvironmentVariable("GO_MEASURE_E2E") == "1";
         static readonly bool pollClock = System.Environment.GetEnvironmentVariable("GO_INPUT_CLOCK") == "poll";
         static readonly double bufPercentile = ParsePct(System.Environment.GetEnvironmentVariable("GO_BUF_PCT"));
+        // GO_BUF_CAP (tests): most smoothing Auto may use, in ms.
+        static readonly float bufCap = float.TryParse(System.Environment.GetEnvironmentVariable("GO_BUF_CAP"), out var cap) && cap >= 4f ? cap : 40f;
         static double ParsePct(string v) =>
             double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 && d < 1 ? d : 0.9;
         readonly long[] localQpc = new long[256];
@@ -95,7 +100,7 @@ namespace GungeonOnline.Replication
         public readonly Dictionary<int, Stream> Streams = new Dictionary<int, Stream>();
         readonly WireWriter w = new WireWriter(512);
 
-        static uint NowMs => (uint)(Time.realtimeSinceStartup * 1000.0);
+        static uint NowMs => (uint)Clock.NowMs;
 
         void Awake()
         {
@@ -128,8 +133,8 @@ namespace GungeonOnline.Replication
         {
             int setting = NetConfig.SmoothingMs.Value;
             if (setting >= 0) return setting;
-            // Auto: cover nearly all jitter, never more than 40 ms, and at least one 240 Hz frame so bursts still play smoothly.
-            return Mathf.Clamp((float)(s.JitterMs * 1.2 + 2.0), 4f, 40f);
+            // Auto: cover nearly all jitter, never more than 40 ms (measured: a higher cap added delay and looked no smoother), and at least one 240 Hz frame so bursts still play smoothly.
+            return Mathf.Clamp((float)(s.JitterMs * 1.2 + 2.0), 4f, bufCap);
         }
 
         void BeforePoll()
@@ -180,7 +185,12 @@ namespace GungeonOnline.Replication
             }
             if (n == 0)
             {
-                if (s.Applied > 0) s.Starved++;
+                if (s.Applied > 0)
+                {
+                    s.Held++;
+                    // Late for real: nothing new for longer than the sender's own frame gap allows.
+                    if (NowMs - s.LastFreshMs > System.Math.Max(8.0, s.SendGapMs * 1.6)) s.Starved++;
+                }
                 // The owner has gone quiet (a stall, a loading screen): stand still instead of running on.
                 if (s.Applied > 0 && NowMs - s.LastFreshMs > StillAfterMs) { var still = s.Last; still.MoveX = 0; still.MoveY = 0; still.Buttons = 0; return still; }
                 return s.Last;
@@ -289,7 +299,13 @@ namespace GungeonOnline.Replication
             s.PollLagMs = s.PollLagMs * 0.95 + (now - arrival) * 0.05;
             if (!pollClock) now = arrival;
             bool fresh = newest > s.NewestSeq;
-            if (fresh) s.LastFreshMs = NowMs;
+            if (fresh)
+            {
+                s.LastFreshMs = NowMs;
+                if (s.LastFreshStamp != 0 && newestTime > s.LastFreshStamp && newest > s.NewestSeq)
+                    s.SendGapMs = s.SendGapMs * 0.95 + System.Math.Min(100.0, (double)(newestTime - s.LastFreshStamp) / System.Math.Max(1u, newest - s.NewestSeq)) * 0.05;
+                s.LastFreshStamp = newestTime;
+            }
             if (fresh) { if (direct) s.FreshDirect++; else s.FreshRelay++; }
             Observe(s, now, newestTime, fresh);
             using (var ms = new System.IO.MemoryStream(data, r.Pos, data.Length - r.Pos))

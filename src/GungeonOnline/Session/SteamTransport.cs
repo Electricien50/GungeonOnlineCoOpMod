@@ -20,7 +20,8 @@ namespace GungeonOnline.Session
     /// <summary>
     /// Datagrams over Steam's peer-to-peer networking (NAT traversal and Steam relays, no ports to open).
     /// Same session code as UDP: only the socket differs. Available only when both players run the Steam build.
-    /// Reads happen on the game thread at the start of the frame, like the UDP inbox drain.
+    /// A background thread reads packets as they come and stamps their real arrival, like the UDP socket, so a slow
+    /// frame here is not mistaken for an uneven connection (that widened the friend's input smoothing for nothing).
     /// </summary>
     public sealed class SteamDatagramSocket : IDatagramSocket
     {
@@ -28,6 +29,11 @@ namespace GungeonOnline.Session
         readonly byte[] buf = new byte[2048];
         readonly Callback<P2PSessionRequest_t> onRequest;
         readonly Func<CSteamID, bool> allow;
+        struct Arrived { public CSteamID From; public byte[] Data; public long Ticks; }
+        readonly System.Collections.Generic.Queue<Arrived> inbox = new System.Collections.Generic.Queue<Arrived>();
+        readonly System.Threading.Thread thread;
+        volatile bool running = true, threadFailed;
+        public static volatile bool Quitting; // never call Steam from the thread once the game starts closing
 
         public SteamDatagramSocket(Func<CSteamID, bool> allowPeer)
         {
@@ -37,10 +43,35 @@ namespace GungeonOnline.Session
             {
                 if (allow(r.m_steamIDRemote)) SteamNetworking.AcceptP2PSessionWithUser(r.m_steamIDRemote);
             });
+            thread = new System.Threading.Thread(ReceiveLoop) { IsBackground = true, Name = "GungeonOnline Steam" };
+            thread.Start();
+        }
+
+        void ReceiveLoop()
+        {
+            var rb = new byte[2048];
+            try
+            {
+                while (running && !Quitting)
+                {
+                    bool any = false;
+                    while (running && !Quitting && SteamNetworking.IsP2PPacketAvailable(out uint size, Channel))
+                    {
+                        var b = size <= rb.Length ? rb : new byte[size];
+                        if (!SteamNetworking.ReadP2PPacket(b, size, out uint got, out CSteamID who, Channel)) break;
+                        var data = new byte[got];
+                        Buffer.BlockCopy(b, 0, data, 0, (int)got);
+                        lock (inbox) if (inbox.Count < 8192) inbox.Enqueue(new Arrived { From = who, Data = data, Ticks = System.Diagnostics.Stopwatch.GetTimestamp() });
+                        any = true;
+                    }
+                    if (!any) System.Threading.Thread.Sleep(1);
+                }
+            }
+            catch (Exception) { threadFailed = true; } // the game thread reads directly from then on
         }
 
         public EndPoint LocalEndPoint => new SteamEndPoint(SteamUser.GetSteamID());
-        public double LastArrivalAge => 0;
+        public double LastArrivalAge { get; private set; }
 
         public void SendTo(EndPoint to, byte[] data, int len)
         {
@@ -54,6 +85,16 @@ namespace GungeonOnline.Session
         public bool TryReceive(out EndPoint from, out byte[] data)
         {
             from = null; data = null;
+            LastArrivalAge = 0;
+            lock (inbox)
+                if (inbox.Count > 0)
+                {
+                    var a = inbox.Dequeue();
+                    from = new SteamEndPoint(a.From); data = a.Data;
+                    LastArrivalAge = (System.Diagnostics.Stopwatch.GetTimestamp() - a.Ticks) / (double)System.Diagnostics.Stopwatch.Frequency;
+                    return true;
+                }
+            if (!threadFailed) return false;
             if (!SteamNetworking.IsP2PPacketAvailable(out uint size, Channel)) return false;
             var b = size <= buf.Length ? buf : new byte[size];
             if (!SteamNetworking.ReadP2PPacket(b, size, out uint got, out CSteamID who, Channel)) return false;
@@ -65,6 +106,7 @@ namespace GungeonOnline.Session
 
         public void Dispose()
         {
+            running = false;
             onRequest?.Unregister();
         }
     }
