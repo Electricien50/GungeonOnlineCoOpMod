@@ -89,7 +89,8 @@ namespace GungeonOnline.Game.NPlayers
                     var blanks = ui.blankControllers[side].GetComponent<dfPanel>();
                     float top = Mathf.Min(hearts.RelativePosition.y, blanks.RelativePosition.y);
                     float bottom = Mathf.Max(hearts.RelativePosition.y + hearts.Height, blanks.RelativePosition.y + blanks.Height);
-                    var down = new Vector3(0f, bottom - top + 6f, 0f);
+                    // Hearts and blanks go on the same rows as player 1's (or 2's), beside them: Sync places them.
+                    var down = Vector3.zero;
                     var heartClone = Clone(hearts, down, made).GetComponent<GameUIHeartController>();
                     var blankClone = Clone(blanks, down, made).GetComponent<GameUIBlankController>();
                     // In co-op the game draws player 1's gun box with ammo panel 1 and player 2's with panel 0.
@@ -143,7 +144,54 @@ namespace GungeonOnline.Game.NPlayers
                 if (k < ui.itemControllers.Count) ui.itemControllers[k].GetComponent<dfPanel>().IsVisible = show;
                 if (k < ui.gunNameLabels.Count && !show) ui.gunNameLabels[k].IsVisible = false;
                 if (k < ui.itemNameLabels.Count && !show) ui.itemNameLabels[k].IsVisible = false;
+                if (show) PlaceBeside(ui, k);
             }
+        }
+
+        /// <summary>
+        /// Player 3's hearts and blanks sit on player 1's rows, just right of player 1's; player 4's on player 2's rows,
+        /// just left of player 2's. The HUD stays as tall as normal co-op, and follows as hearts are gained or lost.
+        /// </summary>
+        static void PlaceBeside(GameUIRoot ui, int k)
+        {
+            int side = k % 2;
+            const float gap = 18f;
+            var rows = new[] { Icons(ui.heartControllers[side], ui.blankControllers[side]), Icons(ui.heartControllers[k], ui.blankControllers[k]) };
+            // One shared edge for both rows (hearts and blanks), so each player's block reads as a column.
+            if (!Edges(rows[0], out float l0, out float r0)) return;
+            Edges(rows[1], out float l1, out float r1);
+            var hp = ui.heartControllers[k].GetComponent<dfPanel>();
+            var bp = ui.blankControllers[k].GetComponent<dfPanel>();
+            if (r1 <= l1) { l1 = hp.GetAbsolutePosition().x; r1 = l1; } // no icons yet: place the empty panel
+            float want = side == 0 ? r0 + gap : l0 - gap - (r1 - l1);
+            float dx = want - l1;
+            if (Mathf.Abs(dx) < 0.5f) return;
+            // The game places each icon once, from the panel's position: move the panels and the icons together.
+            var shift = new Vector3(dx, 0f, 0f);
+            hp.RelativePosition += shift; bp.RelativePosition += shift;
+            foreach (var c in rows[1]) c.RelativePosition += shift;
+        }
+
+        static List<dfControl> Icons(GameUIHeartController h, GameUIBlankController b)
+        {
+            var list = new List<dfControl>();
+            if (h != null) { if (h.extantHearts != null) list.AddRange(h.extantHearts.ConvertAll(x => (dfControl)x)); if (h.extantArmors != null) list.AddRange(h.extantArmors.ConvertAll(x => (dfControl)x)); }
+            if (b != null && b.extantBlanks != null) list.AddRange(b.extantBlanks.ConvertAll(x => (dfControl)x));
+            list.RemoveAll(c => !c);
+            return list;
+        }
+
+        /// <summary>Screen-space left and right edge of a set of HUD icons.</summary>
+        static bool Edges(List<dfControl> icons, out float left, out float right)
+        {
+            left = float.MaxValue; right = float.MinValue;
+            foreach (var c in icons)
+            {
+                if (!c.IsVisible) continue;
+                float x = c.GetAbsolutePosition().x;
+                left = Mathf.Min(left, x); right = Mathf.Max(right, x + c.Width);
+            }
+            return right > left;
         }
 
         // ---------- Routing the game's updates to the right panel ----------

@@ -170,7 +170,7 @@ namespace GungeonOnline.Replication
                 float rtt = 0f;
                 foreach (var cn in NetSession.Instance.Node.Connections) rtt = Mathf.Max(rtt, cn.RttMs);
                 float tol = 4f + 10f * rtt / 1000f;
-                if (d > tol && !p.IsGhost && !p.currentMineCart) problems.Add($"player {slot} position off by {d:F1}");
+                if (d > tol && !p.IsGhost && !p.currentMineCart && !PlayerSync.FellRecently(slot, p)) problems.Add($"player {slot} position off by {d:F1}");
             }
             if (problems.Count == 0) { ConsecutiveClean++; pendingProblems = 0; return; }
             // A single check can catch a change that is still in flight; act on two in a row.

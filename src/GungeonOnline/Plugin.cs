@@ -26,6 +26,7 @@ namespace GungeonOnline
             Game.BackgroundRun.Install(harmony);
             Input.InputPump.Install(harmony);
             Camera.IndependentCamera.Install(harmony);
+            Game.PartnerUI.Install(harmony);
             Game.RunSync.Install(harmony);
             Game.PauseScope.Install(harmony);
             Game.PresentationGate.Install(harmony);

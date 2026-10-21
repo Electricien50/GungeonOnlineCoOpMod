@@ -98,9 +98,19 @@ namespace GungeonOnline.Replication
         /// Start of a frame, right after a remote player's input for it was chosen: put the copy exactly where its owner
         /// was when that input began. Also remembers where the frame started, so the host can tell its own game's moves.
         /// </summary>
+        static readonly Dictionary<int, float> fallSeen = new Dictionary<int, float>();
+
+        /// <summary>A player falling on either machine, or just put back on solid ground: the screens differ by nature.</summary>
+        public static bool FellRecently(int slot, PlayerController p)
+        {
+            if (p != null && p.IsFalling) fallSeen[slot] = Time.realtimeSinceStartup;
+            return fallSeen.TryGetValue(slot, out var at) && Time.realtimeSinceStartup - at < 3f;
+        }
+
         public void Place(int slot, PlayerController p, InputSync.Stream s)
         {
             var t = T(slot);
+            if (p.IsFalling || (s.PlaceState & InputSync.StateFalling) != 0) fallSeen[slot] = Time.realtimeSinceStartup;
             // Host: something in our game moved the copy between the end of the last frame and now (a warp that ran
             // before the input poll this frame). That is a deliberate move too: order it, and do not put the copy back.
             if (NetSession.IsHost && t.FrameEndValid && !p.IsFalling && !p.currentMineCart && Time.realtimeSinceStartup - t.FellAt >= 1.5f && (s.PlaceState & (InputSync.StateFalling | InputSync.StateCart)) == 0 && !GameManager.Instance.IsLoadingLevel

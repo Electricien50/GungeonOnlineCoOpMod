@@ -2,9 +2,11 @@
 
 ## 1.1 (in progress)
 
-**3 and 4 players**
+**3 and 4 players (experimental)**
 - Online co-op for up to 4 players. The host picks *Players: 2, 3 or 4* on the Hosting screen; everyone else sees the host's choice.
-- Each player keeps their own camera, controller and HUD. Players 3 and 4 get their own HUD panels, made from the game's own, under the first two.
+- Each player keeps their own camera, controller and HUD. Players 3 and 4 get their own HUD panels, made from the game's own, beside the first two so they take no extra room at the top.
+- Off-screen players show as just their character icon at the screen edge. New options: *Locator text* (icon only, name, or name and distance) and *Reload text* (everyone, only mine, or off).
+- A slow connection to more than one friend shows as one short line.
 - A death is a knock-out while anyone is still standing; the run ends only when everyone is down. A revive chest or boss pedestal brings every ghost back.
 - Classic style pulls everyone into the fight; Explore stays one fight at a time.
 - Rooms stay lit and active for every player, room-clear rewards reach everyone, and players 3 and 4 get credit for their own kills, damage and synergies.

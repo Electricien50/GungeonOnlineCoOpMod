@@ -120,11 +120,11 @@ Start the game and press pause: you should see **PLAY ONLINE** in the pause menu
 
 If the host's router or firewall blocks the join, the mod opens a path by itself within a few seconds. If it still doesn't go through, your friend's *reply code* is copied for them: they send it to you and you pick *Let in friend* while they're still trying. If both routers are strict, use a VPN such as Tailscale or Radmin VPN and join with `ip:port`.
 
-## Playing with 3 or 4
+## Playing with 3 or 4 (experimental)
 
 Host as usual and set **Players** to 3 or 4 on the Hosting screen (it's next to the co-op style). Send the same invite code to everyone, or invite them from Steam. Each player picks any character in their own Breach.
 
-- Everyone has their own camera, controller and HUD. Players 3 and 4 get HUD panels under the first two.
+- Everyone has their own camera, controller and HUD. Players 3 and 4 get HUD panels beside the first two. 3 and 4 player support is experimental: please report anything odd.
 - Going down is a knock-out while anyone is still up: the run ends only when everyone is down. Any revive chest or boss pedestal brings everyone back.
 - Classic style pulls everyone into the fight; Explore is one fight at a time.
 - Enemies get 1.25x health with 2 players (the game's own number), 1.5x with 3 and 1.75x with 4. Change it in the config if you want it easier or harder.

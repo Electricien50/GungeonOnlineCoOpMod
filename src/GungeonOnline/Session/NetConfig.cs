@@ -24,6 +24,7 @@ namespace GungeonOnline.Session
         public static ConfigEntry<int> LookFrame, LookSelect, LookTitle, LookToast;
         public static ConfigEntry<int> ConnWarning, OverlaySize, CoopStyle, NameColor, NameOpacity;
         public static ConfigEntry<int> SmoothingMs;
+        public static ConfigEntry<int> LocatorLabel, ReloadText;
         public static ConfigEntry<float> CorrectionSpeed;
         public static ConfigEntry<int> WorldSnapshotHz;
         public static ConfigEntry<string> PlayerId;
@@ -53,6 +54,8 @@ namespace GungeonOnline.Session
             var cs = System.Environment.GetEnvironmentVariable("GO_COOP_STYLE"); // harness
             if (!string.IsNullOrEmpty(cs)) { int v; if (int.TryParse(cs, out v)) CoopStyle.Value = v; }
             NameColor = c.Bind("Interface", "NameColor", 0, new ConfigDescription("Name tag color: 0 gold, 1 white, 2 sky, 3 rose, 4 mint.", new AcceptableValueRange<int>(0, 4)));
+            LocatorLabel = c.Bind("Interface", "LocatorLabel", 0, new ConfigDescription("Off-screen marker text: 0 icon only (default), 1 name, 2 name and distance.", new AcceptableValueRange<int>(0, 2)));
+            ReloadText = c.Bind("Interface", "ReloadText", 0, new ConfigDescription("The game's Reload text over players: 0 everyone (default), 1 only mine, 2 off.", new AcceptableValueRange<int>(0, 2)));
             NameOpacity = c.Bind("Interface", "NameOpacity", 0, new ConfigDescription("Name tag opacity: 0 100%, 1 75%, 2 50%.", new AcceptableValueRange<int>(0, 2)));
             FriendCrosshair = c.Bind("Interface", "FriendCrosshair", false, "Show the game's crosshair where your friend is aiming.");
             ConnWarning = c.Bind("Interface", "ConnectionWarning", 1, new ConfigDescription("Note when the connection is not great: 0 off, 1 top, 2 top faint, 3 corner, 4 corner faint.", new AcceptableValueRange<int>(0, 4)));

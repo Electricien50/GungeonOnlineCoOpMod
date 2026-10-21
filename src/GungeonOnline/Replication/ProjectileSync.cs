@@ -70,6 +70,22 @@ namespace GungeonOnline.Replication
                     prefabs[b.BulletObject.name] = b.BulletObject;
         }
 
+        static readonly HashSet<string> missing = new HashSet<string>();
+
+        /// <summary>A bullet no enemy bank named (gun bullets, bullets from enemies the game placed itself):
+        /// look for the loaded prefab by name once, and remember it.</summary>
+        static bool FindLoaded(string key, out GameObject prefab)
+        {
+            prefab = null;
+            if (missing.Contains(key)) return false;
+            foreach (var p in Resources.FindObjectsOfTypeAll<Projectile>())
+                if (p != null && p.gameObject.name == key && !p.gameObject.scene.IsValid()) { prefab = p.gameObject; break; }
+            if (prefab != null) { prefabs[key] = prefab; return true; }
+            missing.Add(key);
+            Plugin.Log.LogInfo("ProjectileSync: no prefab for bullet " + key);
+            return false;
+        }
+
         static bool StartPrefix(Projectile __instance)
         {
             if (!IsClient || copyIds.Contains(__instance.GetInstanceID()) || !HostOwned(__instance)) return true;
@@ -221,7 +237,7 @@ namespace GungeonOnline.Replication
                         var vel = new Vector2(r.F32(), r.F32());
                         var owner = NetIds.Get<AIActor>(r.U32());
                         if (copies.TryGetValue(id, out var have) && have) break; // already flying (sent again on a refresh)
-                        if (!prefabs.TryGetValue(key, out var prefab))
+                        if (!prefabs.TryGetValue(key, out var prefab) && !FindLoaded(key, out prefab))
                         {
                             UnknownPrefabs++;
                             foreach (var any in prefabs.Values) { prefab = any; break; } // still dangerous, maybe wrong look

@@ -227,7 +227,7 @@ namespace GungeonOnline.Dev
         }
 
         int swapStep;
-        float swapSince = -1f;
+        float swapSince = -1f, titleSeen = -1f;
 
         /// <summary>
         /// GO_SWAP_TEST=1 (client): 6 s after both players exist, take the Breach door back to character select,
@@ -245,7 +245,10 @@ namespace GungeonOnline.Dev
                     swapLog = Time.realtimeSinceStartup;
                     // The character select door goes through the title screen: press New Game like a player would.
                     var title = Object.FindObjectOfType<MainMenuFoyerController>();
-                    if (title && Foyer.DoMainMenu && !GameManager.Instance.IsLoadingLevel)
+                    if (!title || !Foyer.DoMainMenu || GameManager.Instance.IsLoadingLevel) titleSeen = -1f;
+                    else if (titleSeen < 0) titleSeen = Time.realtimeSinceStartup;
+                    // Pressing New Game the moment the title scene appears can freeze the game: wait like a player would.
+                    if (titleSeen >= 0 && Time.realtimeSinceStartup - titleSeen > 4f)
                     {
                         Plugin.Log.LogInfo("Harness: title screen, pressing New Game");
                         HarmonyLib.AccessTools.Method(typeof(MainMenuFoyerController), "OnNewGameSelected").Invoke(title, new object[] { null, null });

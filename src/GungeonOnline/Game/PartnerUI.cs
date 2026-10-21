@@ -16,6 +16,28 @@ namespace GungeonOnline.Game
         public static readonly string[] LocatorNames = { "Off", "Speech bubble", "Gun sight", "Minimap head", "Orbit arrow", "Pickup tag" };
         public static readonly string[] ColorNames = { "Gold", "White", "Sky", "Rose", "Mint" };
         static readonly Color[] NameColors = { new Color(1f, 0.82f, 0.33f), new Color(0.96f, 0.95f, 0.92f), new Color(0.48f, 0.78f, 1f), new Color(1f, 0.55f, 0.66f), new Color(0.5f, 0.95f, 0.66f) };
+        public static readonly string[] LabelNames = { "Icon only", "Name", "Name and distance" };
+        public static readonly string[] ReloadNames = { "Everyone", "Only mine", "Off" };
+
+        public static void Install(HarmonyLib.Harmony h)
+        {
+            var m = HarmonyLib.AccessTools.Method(typeof(GameUIRoot), "InformNeedsReload");
+            if (m != null) h.Patch(m, prefix: new HarmonyLib.HarmonyMethod(typeof(PartnerUI), nameof(ReloadPrefix)));
+        }
+
+        /// <summary>Setting: hide the game's Reload text over players (everyone's, or just your friends').</summary>
+        static bool ReloadPrefix(PlayerController attachPlayer)
+        {
+            int mode = NetConfig.ReloadText.Value;
+            if (mode == 2) return false;
+            if (mode == 1 && attachPlayer != null && attachPlayer != PlayerSlots.Local) return false;
+            return true;
+        }
+
+        /// <summary>The camera's picture on screen, in GUI coordinates (the game letterboxes at some window sizes).</summary>
+        static Rect view;
+        static Vector2 ToGui(Vector3 vp) => new Vector2(view.x + vp.x * view.width, view.y + (1f - vp.y) * view.height);
+
         public static readonly string[] TagNames = { "Off", "Above", "Above, outline", "Above, large", "Above, pointer", "Above, ornament", "Below feet", "Beside", "Above, strip", "Above, faint", "Above, with head" };
 
         Lobby lobby;
@@ -65,6 +87,8 @@ namespace GungeonOnline.Game
             var cam = gm.MainCameraController.GetComponent<UnityEngine.Camera>();
             var me = PlayerSlots.Local;
             if (cam == null || me == null) return;
+            var pr = cam.pixelRect;
+            view = new Rect(pr.x, Screen.height - pr.yMax, pr.width, pr.height);
             float dt = Mathf.Min(0.05f, Time.unscaledDeltaTime);
             foreach (var kv in PlayerSlots.Remotes)
             {
@@ -86,7 +110,7 @@ namespace GungeonOnline.Game
                 if (tag > 0 && onA > 0.01f)
                 {
                     // Anchor on the feet: sprite boxes include empty space above the head. Characters are about 22 px tall.
-                    var head = new Vector2(vf.x * Screen.width, (1f - vf.y) * Screen.height - 24 * GungeonUI.Px);
+                    var head = ToGui(vf) - new Vector2(0, 24 * GungeonUI.Px);
                     DrawTag(tag, p, name, head, onA);
                 }
                 if (cross && onA > 0.01f && !p.IsGhost && p.CurrentGun)
@@ -96,7 +120,7 @@ namespace GungeonOnline.Game
                     if (av.z > 0 && av.x > 0 && av.x < 1 && av.y > 0 && av.y < 1)
                     {
                         var c = ColorFor(p);
-                        GungeonUI.SpriteAt("crosshair", new Vector2(av.x * Screen.width, (1f - av.y) * Screen.height), new Color(c.r, c.g, c.b, 0.85f * onA));
+                        GungeonUI.SpriteAt("crosshair", ToGui(av), new Color(c.r, c.g, c.b, 0.85f * onA));
                     }
                 }
                 if (loc > 0 && offA > 0.01f)
@@ -200,7 +224,7 @@ namespace GungeonOnline.Game
             {
                 // Orbit arrow: a bullet-shaped arrow circling your own character, pointing at your friend.
                 Vector3 mv = cam.WorldToViewportPoint(me.CenterPosition);
-                var c = new Vector2(mv.x * Screen.width, (1f - mv.y) * Screen.height);
+                var c = ToGui(mv);
                 float radius = 22 * px;
                 var tip = c + screenDir * radius;
                 float ang = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg + 90f;
@@ -221,17 +245,12 @@ namespace GungeonOnline.Game
                 case 1: box = new Vector2(hs.x + 9 * px, hs.y + 9 * px); break;
                 case 2: box = GungeonUI.SpriteSize("crosshair_gold") + new Vector2(8 * px, 8 * px); break;
                 case 3: box = hs + new Vector2(10 * px, 10 * px); break;
-                default:
-                    {
-                        var ns = GungeonUI.Measure(meters, GungeonUI.Font.Small);
-                        box = new Vector2(hs.x + ns.x + 15 * px, Mathf.Max(hs.y, ns.y) + 8 * px);
-                        break;
-                    }
+                default: box = hs + new Vector2(10 * px, 8 * px); break;
             }
             // Keep clear of the HUD: hearts and blanks along the top, guns and ammo along the bottom.
             float margin = 6 * px;
-            var safe = Rect.MinMaxRect(margin + box.x / 2f, 48 * px + box.y / 2f, Screen.width - margin - box.x / 2f, Screen.height - 62 * px - box.y / 2f);
-            var center = new Vector2(Screen.width / 2f, Mathf.Clamp(Screen.height / 2f, safe.yMin, safe.yMax));
+            var safe = Rect.MinMaxRect(view.xMin + margin + box.x / 2f, view.yMin + 48 * px + box.y / 2f, view.xMax - margin - box.x / 2f, view.yMax - 62 * px - box.y / 2f);
+            var center = new Vector2(view.center.x, Mathf.Clamp(view.center.y, safe.yMin, safe.yMax));
             float s = float.MaxValue;
             if (screenDir.x > 0.0001f) s = Mathf.Min(s, (safe.xMax - center.x) / screenDir.x);
             if (screenDir.x < -0.0001f) s = Mathf.Min(s, (safe.xMin - center.x) / screenDir.x);
@@ -301,12 +320,41 @@ namespace GungeonOnline.Game
                         GungeonUI.SpriteAt("speech_bubble_nub", nubAt, new Color(GungeonUI.Gold.r, GungeonUI.Gold.g, GungeonUI.Gold.b, a));
                         GUI.matrix = m;
                         GungeonUI.Frame("notification_box", r, white, new RectOffset(6, 6, 6, 6));
-                        GungeonUI.Sprite(head, new Rect(r.x + 5 * px, at.y - hs.y / 2f, hs.x, hs.y), white);
-                        var ns = GungeonUI.Measure(meters, GungeonUI.Font.Small);
-                        GungeonUI.Text(meters, new Vector2(r.x + 5 * px + hs.x + 4 * px, at.y - ns.y / 2f + px), GungeonUI.Font.Small, new Color(GungeonUI.Gold.r, GungeonUI.Gold.g, GungeonUI.Gold.b, a));
+                        GungeonUI.Sprite(head, new Rect(at.x - hs.x / 2f, at.y - hs.y / 2f, hs.x, hs.y), white);
                         break;
                     }
             }
+            DrawLocatorLabel(p, name, meters, at, box, screenDir, a);
+        }
+
+        /// <summary>
+        /// Setting (Locator text): the friend's name, and the distance if asked, in a small outlined line on the inner
+        /// side of the marker, so it never covers the marker or the edge of the screen.
+        /// </summary>
+        void DrawLocatorLabel(PlayerController p, string name, string meters, Vector2 at, Vector2 box, Vector2 screenDir, float a)
+        {
+            int mode = NetConfig.LocatorLabel.Value;
+            if (mode == 0) return;
+            int px = GungeonUI.Px;
+            string text = mode == 2 ? name + "  " + meters : name;
+            var size = GungeonUI.Measure(text, GungeonUI.Font.Small);
+            var pick = ColorFor(p);
+            var col = new Color(pick.r, pick.g, pick.b, a);
+            Vector2 pos;
+            if (Mathf.Abs(screenDir.x) >= Mathf.Abs(screenDir.y))
+            {
+                // Marker on a side edge: text goes inward, level with it.
+                float x = screenDir.x > 0 ? at.x - box.x / 2f - 4 * px - size.x : at.x + box.x / 2f + 4 * px;
+                pos = new Vector2(x, at.y - size.y / 2f + px);
+            }
+            else
+            {
+                // Marker on the top or bottom edge: text goes inward, centred under or over it.
+                float y = screenDir.y > 0 ? at.y - box.y / 2f - 3 * px - size.y : at.y + box.y / 2f + 3 * px;
+                pos = new Vector2(at.x - size.x / 2f, y);
+            }
+            pos.x = Mathf.Clamp(pos.x, view.xMin + 2 * px, view.xMax - size.x - 2 * px);
+            Outlined(text, pos, GungeonUI.Font.Small, col);
         }
     }
 }

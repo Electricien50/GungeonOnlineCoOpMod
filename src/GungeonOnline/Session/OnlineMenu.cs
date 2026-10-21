@@ -272,6 +272,11 @@ namespace GungeonOnline.Session
                 case Screen.SetFriend:
                     Add("Locator: " + Game.PartnerUI.LocatorNames[NetConfig.LocatorStyle.Value], () => NetConfig.LocatorStyle.Value = NextLocator(NetConfig.LocatorStyle.Value, 1), true,
                         d => NetConfig.LocatorStyle.Value = NextLocator(NetConfig.LocatorStyle.Value, d));
+                    if (NetConfig.LocatorStyle.Value > 0)
+                        Add("Locator text: " + Game.PartnerUI.LabelNames[NetConfig.LocatorLabel.Value], () => NetConfig.LocatorLabel.Value = (NetConfig.LocatorLabel.Value + 1) % 3, true,
+                            d => NetConfig.LocatorLabel.Value = (NetConfig.LocatorLabel.Value + d + 3) % 3);
+                    Add("Reload text: " + Game.PartnerUI.ReloadNames[NetConfig.ReloadText.Value], () => NetConfig.ReloadText.Value = (NetConfig.ReloadText.Value + 1) % 3, true,
+                        d => NetConfig.ReloadText.Value = (NetConfig.ReloadText.Value + d + 3) % 3);
                     Add("Name tags: " + Game.PartnerUI.TagNames[NetConfig.NameTagStyle.Value], () => NetConfig.NameTagStyle.Value = Cycle(TagOrder, NetConfig.NameTagStyle.Value, 1), true,
                         d => NetConfig.NameTagStyle.Value = Cycle(TagOrder, NetConfig.NameTagStyle.Value, d));
                     if (NetConfig.NameTagStyle.Value > 0)
@@ -729,19 +734,22 @@ namespace GungeonOnline.Session
             float alpha = mode == 2 || mode == 4 ? 0.45f : 1f;
             bool corner = mode >= 3;
             float y = corner ? UnityEngine.Screen.height - 72 * GungeonUI.Px : 6 * GungeonUI.Px;
+            // One short line, however many friends: the worst connection sets the colour.
+            var bad = new List<string>();
+            Color col = Color.white; float worst = -1f; string single = null;
             foreach (var c in s.Node.Connections)
             {
-                string q = Quality(c, out var col);
+                string q = Quality(c, out var cc);
                 if (q == "Great") continue;
-                // With several friends, say whose connection it is.
-                string text = s.Node.Connections.Count > 1
-                    ? $"{GungeonUI.WhoName(c)}: {q.ToLower()}, {Shown(c):F0} ms, {c.LossPercent:F0}% loss"
-                    : $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
-                col.a = alpha;
-                if (corner) GungeonUI.Text(text, new Vector2(8 * GungeonUI.Px, y), GungeonUI.Font.Small, col, scale);
-                else GungeonUI.TextCentered(text, UnityEngine.Screen.width / 2f, y, GungeonUI.Font.Small, col, scale);
-                y += (corner ? -11 : 11) * GungeonUI.Px * scale;
+                bad.Add($"{GungeonUI.WhoName(c)} {Shown(c):F0} ms");
+                single = $"Connection {q}: {Shown(c):F0} ms, {c.LossPercent:F0}% loss";
+                if (Shown(c) > worst) { worst = Shown(c); col = cc; }
             }
+            if (bad.Count == 0) return;
+            string text = s.Node.Connections.Count > 1 ? "Slow connection: " + string.Join(", ", bad.ToArray()) : single;
+            col.a = alpha;
+            if (corner) GungeonUI.Text(text, new Vector2(8 * GungeonUI.Px, y), GungeonUI.Font.Small, col, scale);
+            else GungeonUI.TextCentered(text, UnityEngine.Screen.width / 2f, y, GungeonUI.Font.Small, col, scale);
         }
 
         static string RouterLine(NetSession s)
