@@ -46,6 +46,8 @@ namespace GungeonOnline.Game
                 }
                 // Anyone joining while a run is going (returning or not) is brought onto this floor.
                 if (InRun) RunSync.Instance?.SendRejoin(c);
+                // Mid floor change (no floor right now): bring them in the moment ours is ready, not 40 s later.
+                else if (RunSync.CurrentIndex >= 0) RunSync.Instance?.RejoinWhenReady(c);
             };
             s.SessionEnded += () => { away.Clear(); ContinueAlone = false; Unfreeze(); };
         }
