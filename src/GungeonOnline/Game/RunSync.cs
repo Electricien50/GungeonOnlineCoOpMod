@@ -160,11 +160,12 @@ namespace GungeonOnline.Game
             var ws = Replication.WorldSync.Instance;
             // Already on our way there (a load can take longer than the host's resend interval).
             if (rejoining || gm.IsLoadingLevel || Dungeon.IsGenerating) return;
-            if (!SceneObjects.InBreach && gm.CurrentRunSeed == seed && CurrentIndex == index && ws != null && ws.FloorReady)
+            if (!SceneObjects.InBreach && gm.CurrentRunSeed == seed && CurrentIndex == index && ws != null && gm.Dungeon != null)
             {
-                // Short drop: we never left this floor. Just ask the host for a full refresh.
+                // Already on this floor (a short drop, or we loaded it but never got to say so): never build it a
+                // second time, that makes a different floor. Just tell the host we are here.
                 Plugin.Log.LogInfo("RunSync: rejoined on the same floor, refreshing");
-                ws.ResendReady();
+                if (ws.FloorReady) ws.ResendReady(); else ws.OnFloorLoaded();
                 return;
             }
             Plugin.Log.LogInfo($"RunSync: rejoining the run on floor index {index}");

@@ -337,7 +337,10 @@ namespace GungeonOnline.Replication
                 if (a == null || a.GetComponent<PlayerController>() != null) continue;
                 if (a.CompanionOwner != null || a.GetComponent<CompanionController>() != null) continue; // companions are per machine
                 erasing = true;
+                // One enemy's own death code failing (a boss door mimic did) must not stop the rest: this floor
+                // would never be reported ready, and the host would send it again.
                 try { a.EraseFromExistence(true); }
+                catch (System.Exception e) { Plugin.Log.LogWarning($"WorldSync: could not remove {a.name}: {e.Message}"); }
                 finally { erasing = false; }
                 removed++;
             }
