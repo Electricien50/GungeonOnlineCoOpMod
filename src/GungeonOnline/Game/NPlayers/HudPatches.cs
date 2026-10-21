@@ -155,7 +155,9 @@ namespace GungeonOnline.Game.NPlayers
                 lastHudMode = mode;
                 if (wasHidden) { Restore(ui); Sync(); }
             }
+            hiddenArt.Clear();
             if (mode == 0) return;
+            HookArt();
             for (int id = 1; id < ui.heartControllers.Count; id++)
             {
                 bool present = false;
@@ -163,8 +165,14 @@ namespace GungeonOnline.Game.NPlayers
                 if (!present) continue;
                 int gun = id == 1 ? 0 : id;
                 Hide(At(ui.ammoControllers, gun)); Hide(At(ui.itemControllers, id));
+                hiddenArt.Add(new KeyValuePair<GameUIAmmoController, GameUIItemController>(At(ui.ammoControllers, gun), At(ui.itemControllers, id)));
                 HideLabel(At(ui.gunNameLabels, gun)); HideLabel(At(ui.itemNameLabels, id));
-                if (mode == 2) { Hide(At(ui.heartControllers, id)); Hide(At(ui.blankControllers, id)); }
+                if (mode == 2)
+                {
+                    Hide(At(ui.heartControllers, id)); Hide(At(ui.blankControllers, id));
+                    // The heart and blank icons sit beside their panels, not in them.
+                    foreach (var c in Icons(At(ui.heartControllers, id), At(ui.blankControllers, id))) HideLabel(c);
+                }
             }
         }
 
@@ -257,6 +265,44 @@ namespace GungeonOnline.Game.NPlayers
 
         static void HideLabel(dfControl c) { if (c && c.IsVisible) c.IsVisible = false; }
 
+        /// <summary>
+        /// The gun and item pictures are game sprites drawn over the boxes, not part of the panels: hiding a panel
+        /// leaves them floating, so they are switched off (and back on) with it.
+        /// </summary>
+        static void Art(GameUIAmmoController ammo, GameUIItemController item, bool on)
+        {
+            if (ammo)
+            {
+                if (ammo.gunSprites != null) foreach (var sp in ammo.gunSprites) Show(sp, on);
+                if (ammoOutlines(ammo) != null) foreach (var row in ammoOutlines(ammo)) if (row != null) foreach (var sp in row) Show(sp, on);
+            }
+            if (item)
+            {
+                Show(item.itemSprite, on);
+                if (itemOutlines(item) != null) foreach (var sp in itemOutlines(item)) Show(sp, on);
+            }
+        }
+
+        static readonly HarmonyLib.AccessTools.FieldRef<GameUIAmmoController, tk2dSprite[][]> ammoOutlines = HarmonyLib.AccessTools.FieldRefAccess<GameUIAmmoController, tk2dSprite[][]>("outlineSprites");
+        static readonly HarmonyLib.AccessTools.FieldRef<GameUIItemController, tk2dSprite[]> itemOutlines = HarmonyLib.AccessTools.FieldRefAccess<GameUIItemController, tk2dSprite[]>("outlineSprites");
+
+        // The game switches the gun and item pictures back on during its own frame, after ours: switch them off
+        // again just before any camera draws.
+        static readonly List<KeyValuePair<GameUIAmmoController, GameUIItemController>> hiddenArt = new List<KeyValuePair<GameUIAmmoController, GameUIItemController>>();
+        static bool artHooked;
+
+        static void HookArt()
+        {
+            if (artHooked) return;
+            artHooked = true;
+            UnityEngine.Camera.onPreCull += cam => { foreach (var kv in hiddenArt) Art(kv.Key, kv.Value, false); };
+        }
+
+        static void Show(tk2dBaseSprite sp, bool on)
+        {
+            if (sp && sp.renderer && sp.renderer.enabled != on) sp.renderer.enabled = on;
+        }
+
         /// <summary>Back to everything: show player 2's panels again (players 3 and 4 follow <see cref="Sync"/>).</summary>
         static void Restore(GameUIRoot ui)
         {
@@ -269,6 +315,8 @@ namespace GungeonOnline.Game.NPlayers
                 var panel = c ? c.GetComponent<dfControl>() : null;
                 if (panel) panel.IsVisible = true;
             }
+            for (int id = 1; id < ui.heartControllers.Count; id++) foreach (var c in Icons(At(ui.heartControllers, id), At(ui.blankControllers, id))) c.IsVisible = true;
+            for (int id = 1; id < ui.itemControllers.Count; id++) Art(At(ui.ammoControllers, id == 1 ? 0 : id), At(ui.itemControllers, id), true);
         }
 
         /// <summary>Extra panels show only while that player is in and off the Breach.</summary>

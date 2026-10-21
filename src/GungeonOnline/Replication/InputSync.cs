@@ -35,6 +35,12 @@ namespace GungeonOnline.Replication
             public Vector2 PlacePos;
             public byte PlaceEpoch;
             public byte PlaceState;
+            // How far the owner has most likely moved since the applied frame began, by the time it is applied here:
+            // a frame that lands late is placed where its owner is now, not where they were (see Ahead).
+            public Vector2 PlaceAhead;
+            public Vector2 PrevPos;
+            public uint PrevTime;
+            public bool PrevValid;
             public uint LastFreshMs;
             // Clock mapping: sample = localArrivalMs - remoteMs. Min over a window = fastest path; spread = jitter.
             public readonly Queue<KeyValuePair<double, double>> Samples = new Queue<KeyValuePair<double, double>>();
@@ -63,6 +69,12 @@ namespace GungeonOnline.Replication
         static readonly double bufPercentile = ParsePct(System.Environment.GetEnvironmentVariable("GO_BUF_PCT"));
         // GO_BUF_CAP (tests): most smoothing Auto may use, in ms.
         static readonly float bufCap = float.TryParse(System.Environment.GetEnvironmentVariable("GO_BUF_CAP"), out var cap) && cap >= 4f ? cap : 40f;
+        // GO_BUF_SCALE (tests): smoothing per ms of measured jitter. GO_AHEAD=0 (tests): place late frames where they were.
+        static readonly float bufScale = float.TryParse(System.Environment.GetEnvironmentVariable("GO_BUF_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sc) && sc >= 0f ? sc : 1.2f;
+        static readonly bool aheadOn = System.Environment.GetEnvironmentVariable("GO_AHEAD") != "0";
+        /// <summary>Longest lateness a frame is carried forward over, and the furthest it is moved (units).</summary>
+        const double AheadMaxMs = 80;
+        const float AheadMaxDist = 1.2f;
         static double ParsePct(string v) =>
             double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 && d < 1 ? d : 0.9;
         readonly long[] localQpc = new long[256];
@@ -134,7 +146,7 @@ namespace GungeonOnline.Replication
             int setting = NetConfig.SmoothingMs.Value;
             if (setting >= 0) return setting;
             // Auto: cover nearly all jitter, never more than 40 ms (measured: a higher cap added delay and looked no smoother), and at least one 240 Hz frame so bursts still play smoothly.
-            return Mathf.Clamp((float)(s.JitterMs * 1.2 + 2.0), 4f, bufCap);
+            return Mathf.Clamp((float)(s.JitterMs * bufScale + 2.0), 4f, bufCap);
         }
 
         void BeforePoll()
@@ -204,11 +216,29 @@ namespace GungeonOnline.Replication
             foreach (var k in used) s.Pending.Remove(k);
             if (n > 1) s.Merged += n - 1;
             s.LastLateMs = dueRemote - chosenTime;
+            s.PlaceAhead = Ahead(s, chosen, chosenPos, chosenTime, chosenState, s.LastLateMs);
+            s.PrevPos = chosenPos; s.PrevTime = chosenTime; s.PrevValid = true;
             chosen.Buttons |= edges;
             s.Last = chosen;
             s.AppliedSeq = chosenSeq;
             s.Applied++;
             return chosen;
+        }
+
+        /// <summary>
+        /// The applied frame is this late: carry its start position forward at the owner's own speed (from their last
+        /// two frames), the way rollback games re-run late input. Never past a stop: no stick (or a fall, a cart) means
+        /// no carry, so a stop, a turn or the start of a roll is shown where it really happened.
+        /// </summary>
+        static Vector2 Ahead(Stream s, InputFrame f, Vector2 pos, uint time, byte state, double lateMs)
+        {
+            if (!aheadOn || !s.PrevValid || lateMs <= 1 || state != 0) return Vector2.zero;
+            if (f.MoveX * f.MoveX + f.MoveY * f.MoveY < 0.04f) return Vector2.zero;
+            double dt = (double)(time - s.PrevTime);
+            if (dt <= 0 || dt > 100) return Vector2.zero;
+            var v = (pos - s.PrevPos) / (float)dt;
+            var step = v * (float)System.Math.Min(lateMs, AheadMaxMs);
+            return step.magnitude > AheadMaxDist ? Vector2.zero : step;
         }
 
         void AfterPoll()

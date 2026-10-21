@@ -61,6 +61,28 @@ namespace GungeonOnline.Replication
                 }
             }
             t.A = t.B; t.B = drawn; t.N++;
+            Trace(c, drawn);
+        }
+
+        // Tests (GO_POS_TRACE=1): every frame, the high-resolution clock and where each player is drawn, next to the
+        // status file. Test games share one PC and one clock, so the owner's own trace is the truth for everyone's copy.
+        static readonly bool tracing = System.Environment.GetEnvironmentVariable("GO_POS_TRACE") == "1" && Dev.DevEnv.StatusFile != null;
+        static System.IO.StreamWriter traceOut;
+
+        /// <summary>Tests: trace a player as drawn this frame (your own: its real position).</summary>
+        public static void Trace(Component c, Vector2 drawn)
+        {
+            if (!tracing || !c) return;
+            var p = c as PlayerController ?? c.GetComponent<PlayerController>();
+            if (!p) return;
+            if (traceOut == null)
+                traceOut = new System.IO.StreamWriter(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Dev.DevEnv.StatusFile), "postrace.csv"), false) { AutoFlush = false };
+            int slot = Game.PlayerSlots.SlotOf(p);
+            traceOut.Write(System.Diagnostics.Stopwatch.GetTimestamp());
+            traceOut.Write(',');
+            traceOut.Write(slot == Session.NetSession.LocalSlot ? "own" : "r" + slot);
+            traceOut.WriteLine(',' + drawn.x.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + ',' + drawn.y.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + (p.IsDodgeRolling ? ",1" : ",0"));
+            if (Time.frameCount % 120 == 0) traceOut.Flush();
         }
 
         public static string Stats() => $"slides={Slides} skipped={Skipped} jerk={(JerkFrames > 0 ? JerkSum / JerkFrames : 0):F4}/{JerkMax:F3}";

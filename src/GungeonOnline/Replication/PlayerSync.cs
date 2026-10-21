@@ -128,7 +128,8 @@ namespace GungeonOnline.Replication
                 if (current && ownerFree && p.specRigidbody != null && !p.currentMineCart && !GameManager.Instance.IsLoadingLevel)
                 {
                     Vector2 at = p.transform.position;
-                    float jump = (s.PlacePos - at).magnitude;
+                    var to = s.PlacePos + s.PlaceAhead; // where the owner is now, when the frame landed late
+                    float jump = (to - at).magnitude;
                     t.Placed++;
                     if (jump >= TeleportDistance) t.Teleports++;
                     else { t.JumpSum += jump; if (jump > t.MaxJump) t.MaxJump = jump; }
@@ -137,10 +138,10 @@ namespace GungeonOnline.Replication
                         t.LastJumpLog = Time.realtimeSinceStartup;
                         Plugin.Log.LogInfo($"PLACE slot={slot} jump={jump:F2} roll={p.IsDodgeRolling} starved={s.Starved} merged={s.Merged} late={s.LastLateMs:F0}ms epoch={s.PlaceEpoch}/{t.ExpectedEpoch} sinceMove={Time.realtimeSinceStartup - t.LastMoveAt:F2}s");
                     }
-                    if (jump > 0.0001f) DrawSmoothing.Corrected(p, at, s.PlacePos);
+                    if (jump > 0.0001f) DrawSmoothing.Corrected(p, at, to);
                     if (jump > 0.0001f)
                     {
-                        p.transform.position = new Vector3(s.PlacePos.x, s.PlacePos.y, p.transform.position.z);
+                        p.transform.position = new Vector3(to.x, to.y, p.transform.position.z);
                         p.specRigidbody.Reinitialize();
                     }
                     t.LastPlaced = Time.realtimeSinceStartup;
@@ -164,6 +165,7 @@ namespace GungeonOnline.Replication
             Camera.IndependentCamera.Apply();
             DrawSmoothing.Tick();
             foreach (var kv in PlayerSlots.Remotes) if (kv.Value && !kv.Value.IsFalling && !kv.Value.currentMineCart) DrawSmoothing.Measure(kv.Value);
+            if (PlayerSlots.Local) DrawSmoothing.Trace(PlayerSlots.Local, PlayerSlots.Local.transform.position);
             if (NetSession.IsHost)
             {
                 DetectHostMoves();

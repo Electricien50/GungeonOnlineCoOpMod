@@ -31,7 +31,8 @@ namespace GungeonOnline.Dev
         {
             passive = System.Environment.GetEnvironmentVariable("GO_BOT") == "passive";
             cartBot = System.Environment.GetEnvironmentVariable("GO_BOT") == "cart";
-            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight" || passive || cartBot)
+            danceBot = System.Environment.GetEnvironmentVariable("GO_BOT") == "dance";
+            if (System.Environment.GetEnvironmentVariable("GO_BOT") == "fight" || passive || cartBot || danceBot)
             {
                 bot = true;
                 device = InputPump.Route(0);
@@ -98,6 +99,7 @@ namespace GungeonOnline.Dev
         static InputFrame BotFrame(float t)
         {
             if (cartBot) return CartFrame(t);
+            if (danceBot) return DanceFrame(t);
             var f = new InputFrame();
             var me = GameManager.Instance.PrimaryPlayer;
             // In the Breach, interacting would swap characters at the statues; the bot only plays dungeon floors.
@@ -120,6 +122,29 @@ namespace GungeonOnline.Dev
             float dist = Mathf.Sqrt(bestD);
             f.Move = (strafe + (dist > 6f ? to : dist < 3f ? -to : Vector2.zero)).normalized;
             if (Mathf.Repeat(t, 4f) < 0.02f) f.Set(NetButton.DodgeRoll, true);
+            return f;
+        }
+
+        static bool danceBot;
+
+        /// <summary>
+        /// Latency tests: walk one of 8 directions, then straight back the same time (so the player stays put), with
+        /// stops and dodge rolls in between: the starts, stops, turns and rolls where a friend's copy goes wrong.
+        /// </summary>
+        static InputFrame DanceFrame(float t)
+        {
+            var f = new InputFrame();
+            if (GameManager.Instance.PrimaryPlayer == null || Game.SceneObjects.InBreach) return f;
+            int leg = (int)(t / 0.6f);
+            float inLeg = t - leg * 0.6f;
+            int pair = leg / 2;
+            int h = (pair * 7919 + 13) % 97;
+            if (h % 6 == 0) return f; // a stop
+            float ang = (h % 8) * 45f * Mathf.Deg2Rad;
+            var dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+            f.Move = leg % 2 == 0 ? dir : -dir;
+            f.Aim = f.Move;
+            if (h % 5 == 0 && inLeg < 0.03f) f.Set(NetButton.DodgeRoll, true);
             return f;
         }
 

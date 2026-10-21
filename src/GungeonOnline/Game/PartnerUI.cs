@@ -64,6 +64,7 @@ namespace GungeonOnline.Game
             if (System.Environment.GetEnvironmentVariable("GO_SHOT_UI") == "1") { NetConfig.LocatorStyle.Value = 5; NetConfig.FriendCrosshair.Value = true; }
             if (int.TryParse(System.Environment.GetEnvironmentVariable("GO_OUTLINES"), out var ol)) NetConfig.Outlines.Value = ol;
             if (int.TryParse(System.Environment.GetEnvironmentVariable("GO_MY_COLOR"), out var mc)) NetConfig.MyColor.Value = mc;
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("GO_TEAM_HUD"), out var th)) NetConfig.TeammateHud.Value = th;
             // Harness: GO_SHOT_UI="locator,tag,opacity,crosshair" for front-page screenshots, e.g. "5,1,1,0".
             var su = System.Environment.GetEnvironmentVariable("GO_SHOT_UI");
             if (!string.IsNullOrEmpty(su))
