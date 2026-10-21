@@ -8,6 +8,8 @@
 **Fixes**
 - Swapping character in the Breach no longer teleports the guest next to the host (sometimes into a wall).
 - A guest who crashed and came back while the host was changing floors could end up a floor behind and stuck.
+- On some floors, a guest could end up on a different floor layout from the host after arriving (rooms and enemies stopped matching). One enemy failing to clear on arrival stopped the guest from telling the host it was ready, and the host then made it load the floor a second time.
+- A hit on a guest could fail to count on the host when one of the guest's items reacted to it.
 - If your floor is different from the host's (usually another mod that changes floors, or different mods on each PC), you now get a message saying so, with your other mods listed, instead of rooms and enemies that silently don't match.
 
 ## 1.1.1
