@@ -257,8 +257,21 @@ namespace GungeonOnline.Game
             LastFingerprint = Fingerprint();
             fingerprintIndex = SceneObjects.InBreach ? -1 : CurrentIndex; // which floor that fingerprint is of
             // Not ready in the Breach while on our way back into a run: the host would send us its floor's world.
-            if (NetSession.Active && !NetSession.IsHost && !(rejoining && SceneObjects.InBreach)) Replication.WorldSync.Instance?.OnFloorLoaded();
-            if (!SceneObjects.InBreach) rejoining = false;
+            bool following = rejoining && !SceneObjects.InBreach && hasPending && (pendingIndex != CurrentIndex || pendingSeed != GameManager.Instance.CurrentRunSeed);
+            if (NetSession.Active && !NetSession.IsHost && !(rejoining && SceneObjects.InBreach) && !following) Replication.WorldSync.Instance?.OnFloorLoaded();
+            if (!SceneObjects.InBreach && rejoining)
+            {
+                rejoining = false;
+                // The host changed floors while our rejoin load was already under way: follow it now.
+                if (hasPending && (pendingIndex != CurrentIndex || pendingSeed != GameManager.Instance.CurrentRunSeed))
+                {
+                    hasPending = false;
+                    Plugin.Log.LogInfo($"RunSync: rejoin landed on floor index {CurrentIndex}, the host is on {pendingIndex}: following");
+                    LoadFloor(pendingSeed, pendingIndex, pendingInjected);
+                    return;
+                }
+                hasPending = false;
+            }
             if (NetSession.Active && NetSession.IsHost && !SceneObjects.InBreach) RunBackup.OnHostFloorReady();
             if (SceneObjects.InBreach) CurrentIndex = -1;
             Plugin.Log.LogInfo("FLOOR " + scene + " " + LastFingerprint);
