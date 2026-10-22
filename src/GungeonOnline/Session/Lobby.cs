@@ -28,6 +28,12 @@ namespace GungeonOnline.Session
         public static int HostCoopStyle = -1;
         public static int HostMaxPlayers = -1;
         int sentMax = -1;
+        int sentBreach = -1;
+        /// <summary>Guest: the host said it is in the Breach (-1 = not told yet).</summary>
+        public static int HostInBreach = -1;
+        float nextBreachTrip;
+        float ownRunSince = -1f;
+        static readonly bool oldJoin = Dev.DevEnv.IsHarness && System.Environment.GetEnvironmentVariable("GO_OLD_JOIN") == "1";
         int sentStyle = -1;
         float nextAimCheck;
         float nextChoiceCheck;
@@ -50,7 +56,7 @@ namespace GungeonOnline.Session
                 PlayerSlots.Despawn(c.Slot);
                 SendRoster();
             };
-            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); Colors.Clear(); sentColor = -2; HostCoopStyle = -1; sentStyle = -1; HostMaxPlayers = -1; sentMax = -1; PlayerSlots.Clear(); };
+            s.SessionEnded += () => { Roster.Clear(); sentChoice = null; sentAim = null; Aim.Clear(); Colors.Clear(); sentColor = -2; HostCoopStyle = -1; sentStyle = -1; HostMaxPlayers = -1; sentMax = -1; sentBreach = -1; HostInBreach = -1; PlayerSlots.Clear(); };
         }
 
         static string PrefabOf(PlayerController p)
@@ -103,7 +109,22 @@ namespace GungeonOnline.Session
                     }
                 }
             }
-            if (NetSession.IsHost && (NetConfig.CoopStyle.Value != sentStyle || NetConfig.MaxPlayers.Value != sentMax)) SendStyle();
+            if (NetSession.IsHost && (NetConfig.CoopStyle.Value != sentStyle || NetConfig.MaxPlayers.Value != sentMax || (Game.SceneObjects.InBreach ? 1 : 0) != sentBreach)) SendStyle();
+            // Guest still inside an old run of their own (the host saved and quit, then hosted again from the Breach):
+            // characters are only picked in the Breach, so the host would wait forever. Go there.
+            bool inOwnRun = !NetSession.IsHost && HostInBreach == 1 && !oldJoin && !Game.SceneObjects.InBreach && GameManager.HasInstance &&
+                !GameManager.Instance.IsLoadingLevel && !GameManager.Instance.IsFoyer && GameManager.Instance.Dungeon != null &&
+                GameManager.Instance.PrimaryPlayer != null && Game.SceneObjects.OnDungeonFloor;
+            // Only when that holds steadily: while the game boots or changes level the Breach can briefly look like a run.
+            if (!inOwnRun) ownRunSince = -1f;
+            else if (ownRunSince < 0f) ownRunSince = Time.realtimeSinceStartup;
+            if (inOwnRun && Time.realtimeSinceStartup - ownRunSince >= 5f && Time.realtimeSinceStartup >= nextBreachTrip)
+            {
+                nextBreachTrip = Time.realtimeSinceStartup + 10f;
+                Plugin.Log.LogInfo("Lobby: host is in the Breach and we are in a run; going to the Breach to pick a character");
+                Toasts.Show("The host is in the Breach. Taking you there to pick a character.", 4f);
+                Game.RunSync.GuestToBreach();
+            }
             if (Time.realtimeSinceStartup >= nextAimCheck && local != null) { nextAimCheck = Time.realtimeSinceStartup + 1f; CheckAim(); CheckColor(); }
             // Spawn anyone we know about but have not spawned (our own player may have appeared late).
             if (local != null)
@@ -172,8 +193,9 @@ namespace GungeonOnline.Session
         {
             sentStyle = NetConfig.CoopStyle.Value;
             sentMax = NetConfig.MaxPlayers.Value;
+            sentBreach = Game.SceneObjects.InBreach ? 1 : 0;
             var w = new WireWriter(4);
-            w.U8(MsgStyle); w.U8((byte)sentStyle); w.U8((byte)sentMax);
+            w.U8(MsgStyle); w.U8((byte)sentStyle); w.U8((byte)sentMax); w.U8((byte)sentBreach);
             NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
         }
 
@@ -196,6 +218,7 @@ namespace GungeonOnline.Session
                 if (HostCoopStyle >= 0 && v != HostCoopStyle) Toasts.Show("The host switched to " + (v == 0 ? "Classic" : "Explore") + " co-op");
                 HostCoopStyle = v;
                 if (r.Remaining > 0) HostMaxPlayers = r.U8();
+                if (r.Remaining > 0) HostInBreach = r.U8();
                 return;
             }
             if (type == MsgColor)

@@ -18,7 +18,7 @@ namespace GungeonOnline.Replication
     {
         public static WorldSync Instance { get; private set; }
 
-        const byte EvFloorReady = 1, EvSpawn = 2, EvDespawn = 3, EvDeath = 4, EvDamage = 5, EvRoomSeal = 6;
+        const byte EvFloorReady = 1, EvSpawn = 2, EvDespawn = 3, EvDeath = 4, EvDamage = 5, EvRoomSeal = 6, EvJammed = 7, EvReaper = 8;
 
         /// <summary>True while applying a host event on the client (lets the blocked game paths run).</summary>
         public static bool ApplyingHost;
@@ -43,6 +43,7 @@ namespace GungeonOnline.Replication
             public float OldTime;
             public float TargetTime, MovedFor = -1f; // MovedFor: the snapshot the last move used
             public int Clip;
+            public bool Jammed;
         }
         readonly Dictionary<uint, Replica> replicas = new Dictionary<uint, Replica>();
         uint lastSnapSeq;
@@ -77,6 +78,8 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.Die)), prefix: new HarmonyMethod(t, nameof(DiePrefix)));
             // Client: enemies that appear on their own (split-on-death, summons) are the host's to spawn.
             h.Patch(AccessTools.Method(typeof(AIActor), "Start"), prefix: new HarmonyMethod(t, nameof(ActorStartPrefix)));
+            h.Patch(AccessTools.Method(typeof(Dungeon), nameof(Dungeon.SpawnCurseReaper)), prefix: new HarmonyMethod(t, nameof(SpawnReaperPrefix)));
+            h.Patch(AccessTools.Method(typeof(SuperReaperController), "HandleMotion"), prefix: new HarmonyMethod(t, nameof(ReaperMotionPrefix)));
             // Boss death: the host kills the remaining enemies and their deaths replicate; the client must not do it itself.
             h.Patch(AccessTools.Method(typeof(BossKillCam), "KillAllEnemies"), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
             // Client: erasing its own copy of the floor's boss must not start a boss kill cam (it froze the player).
@@ -98,9 +101,11 @@ namespace GungeonOnline.Replication
 
         void Reset()
         {
-            ready.Clear(); deathSent.Clear(); lastSent.Clear(); replicas.Clear(); earlyEvents.Clear();
+            ready.Clear(); deathSent.Clear(); lastSent.Clear(); replicas.Clear(); earlyEvents.Clear(); jammedSent.Clear(); reaperSent = reaperWanted = false;
             FloorReady = false; lastSnapSeq = 0;
             NetIds.Clear();
+            modEnemyPrefabs.Clear();
+            if (modTemplateRoot) Destroy(modTemplateRoot);
         }
 
         // ---------------- Patches ----------------
@@ -119,8 +124,9 @@ namespace GungeonOnline.Replication
         static bool ActorStartPrefix(AIActor __instance)
         {
             if (!IsClient || ApplyingHost || Instance == null || !Instance.FloorReady) return true;
-            if (__instance.GetComponent<PlayerController>() != null || __instance.CompanionOwner != null || __instance.GetComponent<CompanionController>() != null) return true;
+            if (__instance.GetComponent<PlayerController>() != null || __instance.CompanionOwner != null) return true;
             if (NetIds.Has(__instance)) return true;
+            RememberModEnemy(__instance);
             Instance.LocalActorsSuppressed++;
             __instance.EraseFromExistence(true);
             return false;
@@ -201,6 +207,7 @@ namespace GungeonOnline.Replication
             Vector2 p = a.transform.position;
             ww.F32(p.x); ww.F32(p.y);
             ww.I16((short)RoomIndex(a.ParentRoom));
+            ww.Bool(a.IsBlackPhantom);
             return ww.ToArray();
         }
 
@@ -230,8 +237,86 @@ namespace GungeonOnline.Replication
             if (ready.Count > 0 && Time.realtimeSinceStartup >= nextSnapshot)
             {
                 nextSnapshot = Time.realtimeSinceStartup + 1f / Mathf.Max(10, NetConfig.WorldSnapshotHz.Value);
+                SendJammed();
+                SendReaper();
                 SendSnapshot();
             }
+        }
+
+        // Jammed enemies: the roll uses each PC's own curse total, and items can make an enemy jammed later, so the
+        // host's state is the one shown everywhere.
+        readonly Dictionary<uint, bool> jammedSent = new Dictionary<uint, bool>();
+
+        void SendJammed()
+        {
+            foreach (var kv in NetIds.All)
+            {
+                var a = kv.Value as AIActor;
+                if (a == null) continue;
+                bool j = a.IsBlackPhantom;
+                if (jammedSent.TryGetValue(kv.Key, out var was) && was == j) continue;
+                bool first = !jammedSent.ContainsKey(kv.Key);
+                jammedSent[kv.Key] = j;
+                if (first && !j) continue; // the spawn message already said "not jammed"
+                w.Reset(); w.U8(EvJammed); w.U32(kv.Key); w.Bool(j);
+                SendEvent(w.ToArray());
+            }
+        }
+
+        // Lord of the Jammed is not an enemy actor: the host spawns it from its curse total and sends where it is.
+        bool reaperSent;
+        Vector2 reaperTarget;
+        bool reaperWanted;
+        GameObject reaperCopy; // the guest's copy; SuperReaperController.Instance is only set once it starts
+
+        void SendReaper()
+        {
+            var sr = SuperReaperController.Instance;
+            bool present = sr != null && sr.gameObject.activeInHierarchy;
+            if (!present && !reaperSent) return;
+            reaperSent = present;
+            w.Reset(); w.U8(EvReaper); w.Bool(present);
+            Vector2 p = present ? (Vector2)sr.transform.position : Vector2.zero;
+            w.F32(p.x); w.F32(p.y);
+            SendEvent(w.ToArray());
+        }
+
+        void ApplyReaper(bool present, Vector2 at)
+        {
+            reaperWanted = present; reaperTarget = at;
+            var sr = SuperReaperController.Instance;
+            var d = GameManager.Instance ? GameManager.Instance.Dungeon : null;
+            if (present && sr == null && !reaperCopy && d != null && PrefabDatabase.Instance && PrefabDatabase.Instance.SuperReaper)
+            {
+                d.CurseReaperActive = true;
+                reaperCopy = Instantiate(PrefabDatabase.Instance.SuperReaper, at.ToVector3ZUp(), Quaternion.identity);
+                Plugin.Log.LogInfo("WorldSync: Lord of the Jammed appeared (host)");
+            }
+            else if (!present && (sr != null || reaperCopy))
+            {
+                if (sr != null) Destroy(sr.gameObject);
+                if (reaperCopy) Destroy(reaperCopy);
+                if (d != null) d.CurseReaperActive = false;
+            }
+        }
+
+        void ClientMoveReaper()
+        {
+            var sr = SuperReaperController.Instance;
+            if (!reaperWanted || sr == null) return;
+            Vector2 cur = sr.transform.position;
+            Vector2 next = Vector2.Lerp(cur, reaperTarget, Mathf.Min(1f, Time.deltaTime * 12f));
+            sr.transform.position = new Vector3(next.x, next.y, sr.transform.position.z);
+            if (sr.specRigidbody) sr.specRigidbody.Reinitialize();
+        }
+
+        static bool SpawnReaperPrefix() => !IsClient;
+
+        static bool ReaperMotionPrefix(SuperReaperController __instance)
+        {
+            if (!IsClient) return true;
+            if (__instance.specRigidbody) __instance.specRigidbody.Velocity = Vector2.zero;
+            return false;
         }
 
         void SendSnapshot()
@@ -329,13 +414,14 @@ namespace GungeonOnline.Replication
         public void OnFloorLoaded()
         {
             if (!IsClient) return;
-            replicas.Clear();
+            replicas.Clear(); reaperWanted = false;
             NetIds.Clear();
             int removed = 0;
             foreach (var a in new List<AIActor>(StaticReferenceManager.AllEnemies))
             {
                 if (a == null || a.GetComponent<PlayerController>() != null) continue;
-                if (a.CompanionOwner != null || a.GetComponent<CompanionController>() != null) continue; // companions are per machine
+                if (a.CompanionOwner != null) continue; // owned companions are per machine; unowned critters replicate
+                RememberModEnemy(a);
                 erasing = true;
                 // One enemy's own death code failing (a boss door mimic did) must not stop the rest: this floor
                 // would never be reported ready, and the host would send it again.
@@ -364,7 +450,7 @@ namespace GungeonOnline.Replication
             ShopSync.Instance?.OnFloorChanged();
             PropSync.Instance?.OnFloorChanged();
             replicas.Clear();
-            if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); }
+            if (IsHostSession) { ready.Clear(); lastSent.Clear(); deathSent.Clear(); NetIds.Clear(); jammedSent.Clear(); reaperSent = false; }
         }
 
         void OnEvent(Connection c, byte[] data, Delivery d)
@@ -392,7 +478,7 @@ namespace GungeonOnline.Replication
                 ShopSync.Instance?.Apply(c, data[0], ref sr);
                 return;
             }
-            if (data[0] >= 50 && data[0] < 60)
+            if ((data[0] >= 50 && data[0] < 60) || (data[0] >= 90 && data[0] < 100))
             {
                 if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; }
                 var pr = new WireReader(data, 1, data.Length - 1);
@@ -448,7 +534,7 @@ namespace GungeonOnline.Replication
                 if (type >= 60 && type < 70) { ApplyingHost = false; var sr = new WireReader(data, 1, data.Length - 1); ShopSync.Instance?.Apply(null, type, ref sr); return; }
                 if (type >= 80 && type < 90) { ApplyingHost = false; var qr = new WireReader(data, 1, data.Length - 1); PropSync.Instance?.Apply(type, ref qr); return; }
                 if (type == 45) { var ir = new WireReader(data, 1, data.Length - 1); InventorySync.Instance?.Apply(ref ir); return; }
-                if (type >= 50 && type < 60) { ApplyingHost = false; var pr = new WireReader(data, 1, data.Length - 1); PickupSync.Instance?.Apply(null, type, ref pr); return; }
+                if ((type >= 50 && type < 60) || (type >= 90 && type < 100)) { ApplyingHost = false; var pr = new WireReader(data, 1, data.Length - 1); PickupSync.Instance?.Apply(null, type, ref pr); return; }
                 switch (type)
                 {
                     case EvSpawn: ApplySpawn(ref r); break;
@@ -487,6 +573,19 @@ namespace GungeonOnline.Replication
                             }
                             break;
                         }
+                    case EvJammed:
+                        {
+                            uint id = r.U32();
+                            bool j = r.Bool();
+                            if (replicas.TryGetValue(id, out var rep)) { rep.Jammed = j; SetJammed(rep.Actor, j); }
+                            break;
+                        }
+                    case EvReaper:
+                        {
+                            bool present = r.Bool();
+                            ApplyReaper(present, new Vector2(r.F32(), r.F32()));
+                            break;
+                        }
                     case EvRoomSeal:
                         {
                             var room = RoomAt(r.I16());
@@ -506,9 +605,10 @@ namespace GungeonOnline.Replication
             string guid = r.Str();
             var pos = new Vector2(r.F32(), r.F32());
             var room = RoomAt(r.I16()) ?? pos.GetAbsoluteRoom();
+            bool jammed = r.Remaining > 0 && r.Bool();
             if (replicas.ContainsKey(id)) return;
             if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNRECV {id} {guid} t={Time.realtimeSinceStartup:F2}");
-            var prefab = EnemyDatabase.GetOrLoadByGuid(guid);
+            var prefab = EnemyPrefab(guid);
             if (prefab == null) { SpawnFailures++; Plugin.Log.LogWarning("WorldSync: unknown enemy " + guid); return; }
             ProjectileSync.LearnBank(prefab);
             var a = AIActor.Spawn(prefab, pos, room, false, AIActor.AwakenAnimationType.Default, false);
@@ -516,12 +616,70 @@ namespace GungeonOnline.Replication
             MakeReplica(a);
             NetIds.Bind(id, a);
             if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNAPPLY {id} t={Time.realtimeSinceStartup:F2}");
-            replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup };
+            replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup, Jammed = jammed };
+            SetJammed(a, jammed);
             SpawnsApplied++;
+            if (Dev.DevEnv.IsHarness && modEnemyPrefabs.ContainsKey(guid))
+                Plugin.Log.LogInfo($"MODREPLICA {guid} active={a.gameObject.activeInHierarchy} drawn={(a.sprite && a.sprite.renderer && a.sprite.renderer.enabled)}");
+        }
+
+        static readonly Dictionary<string, AIActor> modEnemyPrefabs = new Dictionary<string, AIActor>();
+        static GameObject modTemplateRoot;
+
+        static void RememberModEnemy(AIActor actor)
+        {
+            string guid = actor.EnemyGuid;
+            if (string.IsNullOrEmpty(guid) || modEnemyPrefabs.TryGetValue(guid, out var have) && have || EnemyDatabase.GetOrLoadByGuid(guid)) return;
+            // Runtime-built enemies may have no asset prefab at all. Keep a dormant template before removing
+            // the guest's generated actors, so the host can ask for that exact enemy later on.
+            if (!modTemplateRoot)
+            {
+                modTemplateRoot = new GameObject("Gungeon Online enemy templates");
+                modTemplateRoot.SetActive(false);
+                DontDestroyOnLoad(modTemplateRoot);
+            }
+            var go = Instantiate(actor.gameObject, modTemplateRoot.transform, false);
+            go.name = actor.name + " template";
+            go.SetActive(true); // the parent stays inactive; spawning a copy later activates it normally
+            var prefab = go.GetComponent<AIActor>();
+            StaticReferenceManager.AllEnemies.Remove(prefab);
+            modEnemyPrefabs[guid] = prefab;
+            Plugin.Log.LogInfo("WorldSync: preserved mod enemy " + guid + " (" + actor.name + ")");
+        }
+
+        static AIActor EnemyPrefab(string guid)
+        {
+            var native = EnemyDatabase.GetOrLoadByGuid(guid);
+            if (native) return native;
+            if (modEnemyPrefabs.TryGetValue(guid, out var cached) && cached) return cached;
+            // Some content mods retain inactive prefabs without registering them in the native catalogue.
+            // Their runtime actors still have stable GUIDs, and the same loaded prefab exists on each PC.
+            AIActor fallback = null;
+            foreach (var a in Resources.FindObjectsOfTypeAll<AIActor>())
+            {
+                if (!a || a.EnemyGuid != guid) continue;
+                if (!a.gameObject.scene.IsValid()) { fallback = a; break; }
+                if (!a.gameObject.activeSelf && a.ParentRoom == null) fallback = a;
+            }
+            if (fallback)
+            {
+                modEnemyPrefabs[guid] = fallback;
+                Plugin.Log.LogInfo("WorldSync: loaded mod enemy " + guid + " (" + fallback.name + ")");
+            }
+            return fallback;
+        }
+
+        static void SetJammed(AIActor a, bool jammed)
+        {
+            if (!a || a.IsBlackPhantom == jammed) return;
+            if (jammed) a.BecomeBlackPhantom(); else a.UnbecomeBlackPhantom();
         }
 
         static void MakeReplica(AIActor a)
         {
+            a.PreventBlackPhantom = true; // this PC's own curse roll never decides; the host's state does
+            var companion = a.GetComponent<CompanionController>();
+            if (companion) companion.enabled = false;
             if (a.behaviorSpeculator) a.behaviorSpeculator.enabled = false;
             if (a.aiAnimator) a.aiAnimator.enabled = false;
             if (a.aiShooter) a.aiShooter.enabled = false;
@@ -572,6 +730,7 @@ namespace GungeonOnline.Replication
                 var rep = kv.Value;
                 var a = rep.Actor;
                 if (!a || a.healthHaver == null || a.healthHaver.IsDead) continue;
+                if (a.IsBlackPhantom != rep.Jammed) SetJammed(a, rep.Jammed);
                 float age = Mathf.Min(0.1f, now - rep.TargetTime); // extrapolate at most 100 ms
                 Vector2 want = rep.Target + rep.Velocity * age;
                 Vector2 cur = a.transform.position;
@@ -596,7 +755,7 @@ namespace GungeonOnline.Replication
         {
             if (!NetSession.Active) return;
             if (NetSession.IsHost) HostLateUpdate();
-            else if (FloorReady) ClientMoveReplicas();
+            else if (FloorReady) { ClientMoveReplicas(); ClientMoveReaper(); }
         }
     }
 }

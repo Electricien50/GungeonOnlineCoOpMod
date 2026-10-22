@@ -295,6 +295,18 @@ namespace GungeonOnline.Dev
             best.Interact(me);
         }
 
+        bool shopLooked;
+        void ShopLook()
+        {
+            if (shopLooked || System.Environment.GetEnvironmentVariable("GO_SHOP_LOOK") != "1" || Session.NetSession.IsHost) return;
+            var at = Replication.ShopSync.LookAt; var me = GameManager.Instance.PrimaryPlayer;
+            if (at == null || !me) return;
+            shopLooked = true;
+            me.transform.position = at.Value + new Vector2(0f, -2f);
+            me.specRigidbody.Reinitialize();
+            Plugin.Log.LogInfo("Harness: guest looks at the restocked item at " + at.Value);
+        }
+
         float nextPedestalLog;
         void PedestalLog()
         {
@@ -801,6 +813,7 @@ namespace GungeonOnline.Dev
             try { BossKill(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: boss kill error " + e.Message); }
             try { DeathButton(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: death button error " + e); }
             try { PedestalTake(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: pedestal take error " + e.Message); }
+            try { ShopLook(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: shop look error " + e.Message); }
             try { PedestalLog(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: pedestal log error " + e.Message); }
             try { HarnessUpdate(); }
             catch (System.Exception e)

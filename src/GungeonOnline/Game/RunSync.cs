@@ -14,12 +14,17 @@ namespace GungeonOnline.Game
     /// </summary>
     internal sealed class RunSync : MonoBehaviour
     {
-        const byte MsgLoadLevel = 1, MsgRejoin = 2, MsgLayout = 3;
+        const byte MsgLoadLevel = 1, MsgRejoin = 2, MsgLayout = 3, MsgClone = 4, MsgMods = 5;
         /// <summary>Index of the floor currently loaded (both machines).</summary>
         public static int CurrentIndex = -1;
         public static RunSync Instance { get; private set; }
 
         static bool clientAllowed;
+        static byte resetKind;
+        static bool applyingReset, applyingClone;
+        static bool resetUnload, resetMenu;
+        static QuickRestartOptions resetOptions;
+        public static bool CloneInProgress { get; private set; }
         public string LastFingerprint = "-";
         string lastScene;
 
@@ -29,6 +34,78 @@ namespace GungeonOnline.Game
                 prefix: new HarmonyMethod(typeof(RunSync), nameof(LoadNextLevelPrefix)));
             h.Patch(AccessTools.Method(typeof(GameManager), nameof(GameManager.DelayedLoadNextLevel)),
                 prefix: new HarmonyMethod(typeof(RunSync), nameof(DelayedPrefix)));
+            foreach (var name in new[] { "ReturnToFoyer", "LoadCharacterSelect", "QuickRestart" })
+                h.Patch(AccessTools.Method(typeof(GameManager), name),
+                    prefix: new HarmonyMethod(typeof(RunSync), nameof(ResetPrefix)),
+                    finalizer: new HarmonyMethod(typeof(RunSync), nameof(ResetFinished)));
+            // Reject a guest's reset before its UI closes or a delayed coroutine sets the loading flag.
+            foreach (var name in new[] { "DelayedReturnToFoyer", "DelayedLoadCharacterSelect", "DelayedQuickRestart" })
+                h.Patch(AccessTools.Method(typeof(GameManager), name), prefix: new HarmonyMethod(typeof(RunSync), nameof(GuestResetAllowed)));
+            foreach (var name in new[] { "DoMainMenu", "DoQuickRestart" })
+                h.Patch(AccessTools.Method(typeof(AmmonomiconDeathPageController), name), prefix: new HarmonyMethod(typeof(RunSync), nameof(GuestResetAllowed)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), "DoCloneEffect"),
+                prefix: new HarmonyMethod(typeof(RunSync), nameof(ClonePrefix)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.HandleCloneItem)),
+                prefix: new HarmonyMethod(typeof(RunSync), nameof(CloneItemPrefix)));
+        }
+
+        static bool ResetPrefix(System.Reflection.MethodBase __originalMethod, object[] __args, out byte __state)
+        {
+            __state = resetKind;
+            if (!NetSession.Active) return true;
+            if (!GuestResetAllowed()) return false;
+            resetKind = __originalMethod.Name == "ReturnToFoyer" ? (byte)1 : __originalMethod.Name == "LoadCharacterSelect" ? (byte)2 : (byte)3;
+            if (resetKind == 2) { resetUnload = (bool)__args[0]; resetMenu = (bool)__args[1]; }
+            if (resetKind == 3) resetOptions = (QuickRestartOptions)__args[0];
+            return true;
+        }
+
+        /// <summary>Guest: leave a run of our own for the Breach, where the host is waiting for our pick.</summary>
+        public static void GuestToBreach()
+        {
+            var gm = GameManager.Instance;
+            rejoining = hasPending = false;
+            CurrentIndex = -1;
+            Replication.WorldSync.Instance?.OnFloorUnloading();
+            clientAllowed = applyingReset = true;
+            try { gm.ReturnToFoyer(); }
+            finally { applyingReset = false; clientAllowed = false; }
+        }
+
+        static bool GuestResetAllowed()
+        {
+            if (!NetSession.Active || NetSession.IsHost || applyingReset || SceneObjects.InBreach) return true;
+            Toasts.Show("The host chooses when to restart or return to the Breach.", 4f);
+            return false;
+        }
+
+        static System.Exception ResetFinished(System.Exception __exception, byte __state)
+        {
+            resetKind = __state;
+            return __exception;
+        }
+
+        static bool CloneItemPrefix(PlayerController __instance)
+        {
+            if (!NetSession.Active) return true;
+            if (NPlayers.Players.AnyOtherAlive(__instance))
+                Traverse.Create(__instance).Field("m_cloneWaitingForCoopDeath").SetValue(true);
+            else AccessTools.Method(typeof(PlayerController), "DoCloneEffect").Invoke(__instance, null);
+            return false;
+        }
+
+        static bool ClonePrefix(PlayerController __instance)
+        {
+            if (!NetSession.Active || applyingClone) return true;
+            // Every fatal guest hit reaches the host through VitalsSync. Only the host starts the shared Clone.
+            if (!NetSession.IsHost || CloneInProgress) return false;
+            CloneInProgress = true;
+            var w = new WireWriter(2);
+            w.U8(MsgClone); w.U8((byte)PlayerSlots.SlotOf(__instance));
+            NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
+            NetSession.Instance.FlushNow();
+            Plugin.Log.LogInfo("RunSync: Clone restarts everyone, owner slot " + PlayerSlots.SlotOf(__instance));
+            return true;
         }
 
         void Awake() { Instance = this; }
@@ -36,6 +113,19 @@ namespace GungeonOnline.Game
         void Start()
         {
             NetSession.Instance.On(Channel.Control, OnControl);
+            // Everyone says which other mods they run as soon as they connect, so a mismatch shows before the run.
+            NetSession.Instance.PeerJoined += c =>
+            {
+                var w = new WireWriter(256);
+                w.U8(MsgMods); w.Str(ModList());
+                c.Send((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
+            };
+            NetSession.Instance.SessionEnded += () =>
+            {
+                rejoining = hasPending = CloneInProgress = clientAllowed = false;
+                rejoinWhenReady.Clear(); lastRejoin.Clear();
+                hostLayout = null; hostLayoutIndex = warnedIndex = -2;
+            };
         }
 
         static Traverse GM => Traverse.Create(GameManager.Instance);
@@ -77,6 +167,7 @@ namespace GungeonOnline.Game
                 else if (!gm.IsSeeded)
                 {
                     int seed = Random.Range(1, int.MaxValue);
+                    if (Dev.DevEnv.IsHarness && int.TryParse(System.Environment.GetEnvironmentVariable("GO_RUN_SEED"), out var testSeed) && testSeed > 0) seed = testSeed;
                     gm.CurrentRunSeed = seed;
                     Plugin.Log.LogInfo("RunSync: run seed " + seed);
                 }
@@ -88,13 +179,27 @@ namespace GungeonOnline.Game
                 w.I32(gm.CurrentRunSeed);
                 w.I32(index);
                 w.Str(gm.InjectedLevelName ?? "");
+                // Returning to the Breach and quick restart clear players, pause state and run data before loading.
+                // A bare floor load on the guest leaves its old dead players and game-over pause behind.
+                w.U8(resetKind);
+                if (resetKind == 2) { w.Bool(resetUnload); w.Bool(resetMenu); }
+                if (resetKind == 3)
+                {
+                    w.Bool(resetOptions.GunGame); w.I32((int)resetOptions.ChallengeMode);
+                    w.Bool(resetOptions.BossRush); w.I32(resetOptions.NumMetas);
+                }
                 Replication.WorldSync.Instance?.OnFloorUnloading();
                 NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
                 NetSession.Instance.FlushNow();
                 Plugin.Log.LogInfo($"RunSync: host loading level index {GM.Field("nextLevelIndex").GetValue<int>()}");
                 return true;
             }
-            if (clientAllowed) { clientAllowed = false; return true; }
+            if (clientAllowed)
+            {
+                clientAllowed = false;
+                ReseedForFloor(gm.CurrentRunSeed, GM.Field("nextLevelIndex").GetValue<int>());
+                return true;
+            }
             Plugin.Log.LogInfo("RunSync: client blocked its own level load (waiting for host)");
             return false;
         }
@@ -105,7 +210,12 @@ namespace GungeonOnline.Game
         /// </summary>
         static void ReseedForFloor(int seed, int index)
         {
-            unchecked { BraveRandom.InitializeWithSeed(seed * 31 + index * 7919 + 17); }
+            unchecked
+            {
+                int floorSeed = seed * 31 + index * 7919 + 17;
+                BraveRandom.InitializeWithSeed(floorSeed);
+                Random.InitState(floorSeed);
+            }
         }
 
         /// <summary>Host: a player came back mid-run. Bring them to this floor (or just re-sync if they never left it).</summary>
@@ -128,13 +238,50 @@ namespace GungeonOnline.Game
         {
             var r = new WireReader(data, 0, data.Length);
             byte type = r.U8();
+            if (type == MsgMods) { CompareMods(c, r.Str()); return; }
             if (NetSession.IsHost) return;
+            if (type == MsgLoadLevel || type == MsgRejoin) Session.Lobby.HostInBreach = 0; // the host is in a run now
+            if (type == MsgClone)
+            {
+                var owner = PlayerSlots.ForSlot(r.U8());
+                if (owner && !CloneInProgress)
+                {
+                    CloneInProgress = true;
+                    applyingClone = true;
+                    try { AccessTools.Method(typeof(PlayerController), "DoCloneEffect").Invoke(owner, null); }
+                    finally { applyingClone = false; }
+                }
+                return;
+            }
             if (type == MsgRejoin) { OnRejoin(ref r); return; }
-            if (type == MsgLayout) { hostLayoutIndex = r.I32(); hostLayout = r.Str(); CheckLayout(); return; }
+            if (type == MsgLayout) { hostLayoutIndex = r.I32(); hostLayoutSeed = r.I32(); hostLayout = r.Str(); CheckLayout(); return; }
             if (type != MsgLoadLevel) return;
             int seed = r.I32();
             int index = r.I32();
             string injected = r.Str();
+            byte reset = r.U8();
+            if (reset != 0)
+            {
+                resetUnload = reset == 2 && r.Bool();
+                resetMenu = reset == 2 && r.Bool();
+                if (reset == 3)
+                    resetOptions = new QuickRestartOptions { GunGame = r.Bool(), ChallengeMode = (ChallengeModeType)r.I32(), BossRush = r.Bool(), NumMetas = r.I32() };
+                var gm = GameManager.Instance;
+                rejoining = hasPending = false;
+                gm.CurrentRunSeed = seed;
+                CurrentIndex = index;
+                Replication.WorldSync.Instance?.OnFloorUnloading();
+                clientAllowed = applyingReset = true;
+                try
+                {
+                    Plugin.Log.LogInfo("RunSync: following host run reset " + reset);
+                    if (reset == 1) gm.ReturnToFoyer();
+                    else if (reset == 2) gm.LoadCharacterSelect(resetUnload, resetMenu);
+                    else gm.QuickRestart(resetOptions);
+                }
+                finally { applyingReset = false; clientAllowed = false; }
+                return;
+            }
             // Still finding our way back after a restart (the game may not even be ready to load yet): go to this
             // floor when the rejoin gets there, not now. The host moved on while we were away.
             if (rejoining)
@@ -159,7 +306,12 @@ namespace GungeonOnline.Game
             var gm = GameManager.Instance;
             var ws = Replication.WorldSync.Instance;
             // Already on our way there (a load can take longer than the host's resend interval).
-            if (rejoining || gm.IsLoadingLevel || Dungeon.IsGenerating) return;
+            if (rejoining)
+            {
+                pendingSeed = seed; pendingIndex = index; pendingInjected = injected; hasPending = true;
+                return;
+            }
+            if (gm.IsLoadingLevel || Dungeon.IsGenerating) return;
             if (!SceneObjects.InBreach && gm.CurrentRunSeed == seed && CurrentIndex == index && ws != null && gm.Dungeon != null)
             {
                 // Already on this floor (a short drop, or we loaded it but never got to say so): never build it a
@@ -254,6 +406,7 @@ namespace GungeonOnline.Game
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "#" + GameManager.Instance.Dungeon.GetInstanceID();
             if (scene == lastScene) return;
             lastScene = scene;
+            if (CloneInProgress) StartCoroutine(FinishClone());
             LastFingerprint = Fingerprint();
             fingerprintIndex = SceneObjects.InBreach ? -1 : CurrentIndex; // which floor that fingerprint is of
             // Not ready in the Breach while on our way back into a run: the host would send us its floor's world.
@@ -289,12 +442,36 @@ namespace GungeonOnline.Game
         }
 
         // ---------- Same floor on every machine? ----------
+
+        System.Collections.IEnumerator FinishClone()
+        {
+            var floor = GameManager.Instance.Dungeon;
+            // The last death and the Clone load overlap. Its co-op death coroutine may turn that player into
+            // a ghost after Clone's first revive pass, especially on the last of three or four machines.
+            float end = Time.realtimeSinceStartup + 2f;
+            while (Time.realtimeSinceStartup < end) yield return null;
+            if (!NetSession.Active || GameManager.Instance.Dungeon != floor) yield break;
+            foreach (var p in NPlayers.Players.All)
+            {
+                if (p.IsGhost)
+                {
+                    p.gameObject.SetActive(true);
+                    p.specRigidbody.enabled = true;
+                    p.ResurrectFromChest(p.CenterPosition);
+                }
+                p.healthHaver.FullHeal();
+                if (p.characterIdentity == PlayableCharacters.Robot) p.healthHaver.Armor = 6f;
+            }
+            Replication.PickupSync.WithScope(() => Chest.ToggleCoopChests(false));
+            CloneInProgress = false;
+            Plugin.Log.LogInfo("RunSync: Clone completed, everyone revived");
+        }
         // Every machine builds the floor itself from the host's seed. Another mod that changes floors (new rooms,
         // new enemies) makes each machine build a different one: rooms, walls and enemies stop matching. The host
         // sends its layout; a guest whose own differs is told why, once per floor.
 
         static string hostLayout;
-        static int hostLayoutIndex = -2, warnedIndex = -2, fingerprintIndex = -1;
+        static int hostLayoutIndex = -2, hostLayoutSeed, warnedIndex = -2, fingerprintIndex = -1;
 
         static string LayoutPart(string fp)
         {
@@ -309,7 +486,7 @@ namespace GungeonOnline.Game
             if (!NetSession.Active || !NetSession.IsHost || fingerprintIndex < 0 || fingerprintIndex != CurrentIndex || LastFingerprint == "-") return;
             if (GameManager.Instance.IsLoadingLevel || Dungeon.IsGenerating) return;
             var w = new WireWriter(96);
-            w.U8(MsgLayout); w.I32(fingerprintIndex); w.Str(LayoutPart(LastFingerprint));
+            w.U8(MsgLayout); w.I32(fingerprintIndex); w.I32(GameManager.Instance.CurrentRunSeed); w.Str(LayoutPart(LastFingerprint));
             if (to != null) to.Send((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
             else NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
         }
@@ -317,6 +494,7 @@ namespace GungeonOnline.Game
         void CheckLayout()
         {
             if (hostLayout == null || fingerprintIndex < 0 || hostLayoutIndex != fingerprintIndex || fingerprintIndex != CurrentIndex || SceneObjects.InBreach || LastFingerprint == "-") return;
+            if (hostLayoutSeed != GameManager.Instance.CurrentRunSeed) return;
             if (GameManager.Instance.IsLoadingLevel || Dungeon.IsGenerating) return;
             var mine = LayoutPart(LastFingerprint);
             if (System.Environment.GetEnvironmentVariable("GO_LAYOUT_TEST") == "1") mine += "-test"; // tests: a floor that differs
@@ -324,9 +502,50 @@ namespace GungeonOnline.Game
             warnedIndex = CurrentIndex;
             var others = OtherMods();
             Plugin.Log.LogWarning($"FLOOR MISMATCH: host {hostLayout}, mine {mine}; other mods: {(others.Length > 0 ? others : "none")}");
-            Toasts.Show(others.Length > 0
+            string message = others.Length > 0
                 ? "This floor is different from the host's, so rooms and enemies won't match. Other mods can change floors: " + others + ". Everyone needs the same mods, or play without them."
-                : "This floor is different from the host's, so rooms and enemies won't match. Does the host have other mods installed? Everyone needs the same mods.", 14f, true);
+                : "This floor is different from the host's, so rooms and enemies won't match. Does the host have other mods installed? Everyone needs the same mods.";
+            // Continuing puts the guest in walls and lets them take damage from enemies they cannot see.
+            // Stop the incompatible run and return safely rather than trying to replicate onto another layout.
+            NetSession.Instance.Leave("incompatible floor layout");
+            GameManager.Instance.ForceUnpause();
+            GameManager.Instance.DelayedLoadCharacterSelect(0.5f, true, false);
+            Toasts.Show(message + " Returned to the Breach safely.", 18f, true);
+        }
+
+        /// <summary>Other BepInEx plugins loaded next to this one, as "name version" entries.</summary>
+        public static string ModList()
+        {
+            var names = new System.Collections.Generic.List<string>();
+            try
+            {
+                foreach (var kv in BepInEx.Bootstrap.Chainloader.PluginInfos)
+                    if (kv.Key != Plugin.Guid && kv.Value != null && kv.Value.Metadata != null)
+                        names.Add(kv.Value.Metadata.Name + " " + kv.Value.Metadata.Version);
+            }
+            catch (System.Exception) { }
+            names.Sort(System.StringComparer.Ordinal);
+            return string.Join(";", names.ToArray());
+        }
+
+        public static string LastModWarning = "";
+
+        static void CompareMods(Connection c, string theirs)
+        {
+            var mine = new System.Collections.Generic.HashSet<string>(ModList().Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries));
+            var other = new System.Collections.Generic.HashSet<string>(theirs.Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries));
+            var onlyMine = new System.Collections.Generic.List<string>(); var onlyTheirs = new System.Collections.Generic.List<string>();
+            foreach (var m in mine) if (!other.Contains(m)) onlyMine.Add(m);
+            foreach (var m in other) if (!mine.Contains(m)) onlyTheirs.Add(m);
+            if (onlyMine.Count == 0 && onlyTheirs.Count == 0) { Plugin.Log.LogInfo("Mods match " + GungeonUI.WhoName(c) + ": " + (mine.Count > 0 ? string.Join(", ", new System.Collections.Generic.List<string>(mine).ToArray()) : "none")); return; }
+            string who = GungeonUI.WhoName(c);
+            string msg = "Your mods are different from " + who + "'s, so floors may not match.";
+            if (onlyMine.Count > 0) msg += " Only you have: " + string.Join(", ", onlyMine.ToArray()) + ".";
+            if (onlyTheirs.Count > 0) msg += " Only " + who + " has: " + string.Join(", ", onlyTheirs.ToArray()) + ".";
+            msg += " Everyone needs the same mods and versions.";
+            LastModWarning = msg;
+            Plugin.Log.LogWarning("MODS DIFFER: " + msg);
+            Toasts.Show(msg, 15f, true);
         }
 
         /// <summary>Other BepInEx plugins loaded next to this one, by name.</summary>

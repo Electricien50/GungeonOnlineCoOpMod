@@ -39,6 +39,7 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(PlayerController), "Die"), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(DiedPostfix)));
             h.Patch(AccessTools.PropertyGetter(typeof(PlayerController), nameof(PlayerController.IsInMinecart)), prefix: new HarmonyMethod(typeof(VitalsSync), nameof(InMinecartPrefix)));
             h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.ResurrectFromChest)), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(RevivedPostfix)));
+            h.Patch(AccessTools.Method(typeof(PlayerController), nameof(PlayerController.ResurrectFromBossKill)), postfix: new HarmonyMethod(typeof(VitalsSync), nameof(BossRevivedPostfix)));
             h.Patch(AccessTools.Method(typeof(PlayerController), "Fall"),
                 prefix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPrefix)),
                 postfix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPostfix)));
@@ -172,11 +173,21 @@ namespace GungeonOnline.Replication
 
         static void RevivedPostfix(PlayerController __instance, Vector2 chestBottomCenter)
         {
+            SendRevive(__instance, chestBottomCenter, false);
+        }
+
+        static void BossRevivedPostfix(PlayerController __instance)
+        {
+            SendRevive(__instance, __instance.transform.position, true);
+        }
+
+        static void SendRevive(PlayerController __instance, Vector2 at, bool boss)
+        {
             if (!IsHostSession || scope || Instance == null) return;
             int slot = PlayerSlots.SlotOf(__instance);
             if (slot < 0) return;
             var w = Instance.w;
-            w.Reset(); w.U8(EvPlayerRevived); w.U8((byte)slot); w.F32(chestBottomCenter.x); w.F32(chestBottomCenter.y);
+            w.Reset(); w.U8(EvPlayerRevived); w.U8((byte)slot); w.F32(at.x); w.F32(at.y); w.Bool(boss);
             Instance.SendReady(w.ToArray());
         }
 
@@ -231,6 +242,7 @@ namespace GungeonOnline.Replication
                     // hit still counts, and health and death below must still follow what the owner saw.
                     try { p.healthHaver.ApplyDamage(dmg, dir, "remote", CoreDamageTypes.None, DamageCategory.Normal, true); }
                     catch (System.Exception e) { if (!itemErrorLogged) { itemErrorLogged = true; Plugin.Log.LogWarning("Vitals: an item's hit reaction failed on a copy: " + e.Message); } }
+                    if (Game.RunSync.CloneInProgress) return;
                     p.healthHaver.ForceSetCurrentHealth(hpAfter);
                     p.healthHaver.Armor = armorAfter;
                     // The owner saw this hit kill; if this copy's own checks (i-frames, invulnerability) skipped the
@@ -264,10 +276,17 @@ namespace GungeonOnline.Replication
             {
                 var p = PlayerSlots.ForSlot(r.U8());
                 var at = new Vector2(r.F32(), r.F32());
+                bool boss = r.Bool();
                 if (!p || !p.IsGhost) return;
                 deathRun.Remove(PlayerSlots.SlotOf(p));
                 scope = true;
-                try { p.ResurrectFromChest(at); }
+                try
+                {
+                    p.gameObject.SetActive(true);
+                    p.specRigidbody.enabled = true;
+                    if (boss) { p.transform.position = at; p.ResurrectFromBossKill(); }
+                    else p.ResurrectFromChest(at);
+                }
                 finally { scope = false; }
             }
             else if (type == EvVitals && !NetSession.IsHost)

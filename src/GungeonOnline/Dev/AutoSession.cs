@@ -64,6 +64,23 @@ namespace GungeonOnline.Dev
             NetSession.Instance.Host();
         }
 
+        /// <summary>Harness (GO_GUEST_IN_RUN=1): the guest is still inside a run of its own (the host saved and quit,
+        /// then hosted again from the Breach) and joins from there.</summary>
+        static System.Collections.IEnumerator GuestInRun(string code)
+        {
+            while (!Game.SceneObjects.InBreach || GameManager.Instance.PrimaryPlayer == null) yield return null;
+            yield return new UnityEngine.WaitForSeconds(4f);
+            UnityEngine.Debug.Log("Harness: guest leaving the Breach alone, offline");
+            Pixelator.Instance.FadeToBlack(0.5f);
+            GameManager.Instance.DelayedLoadNextLevel(0.75f);
+            Game.SceneObjects.Breach.OnDepartedFoyer();
+            yield return new UnityEngine.WaitForSeconds(3f);
+            while (GameManager.Instance.IsLoadingLevel || !Game.SceneObjects.OnDungeonFloor || GameManager.Instance.PrimaryPlayer == null) yield return null;
+            yield return new UnityEngine.WaitForSeconds(5f);
+            UnityEngine.Debug.Log("Harness: guest joining from inside its own run");
+            NetSession.Instance.Join(code);
+        }
+
         public static void Begin()
         {
             var a = DevEnv.Auto;
@@ -72,6 +89,11 @@ namespace GungeonOnline.Dev
             {
                 if (a == "host") { NetSession.Instance.StartCoroutine(HostInRun()); return; }
                 if (a.StartsWith("join:")) { NetSession.Instance.StartCoroutine(Late(45f)); return; }
+            }
+            if (System.Environment.GetEnvironmentVariable("GO_GUEST_IN_RUN") == "1" && a.StartsWith("join:"))
+            {
+                NetSession.Instance.StartCoroutine(GuestInRun(a.Substring(5)));
+                return;
             }
             var late = System.Environment.GetEnvironmentVariable("GO_JOIN_LATE");
             if (!string.IsNullOrEmpty(late) && (a == "host" || a.StartsWith("join:")))

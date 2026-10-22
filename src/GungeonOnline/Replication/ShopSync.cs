@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using GungeonOnline.Game;
 using GungeonOnline.Net;
 using GungeonOnline.Session;
@@ -29,12 +31,38 @@ namespace GungeonOnline.Replication
         float nextScan, nextFullScan;
         readonly Dictionary<int, uint> hostIds = new Dictionary<int, uint>();
         public int Announced, Mapped, Restocked, Requests;
+        public static Vector2? LookAt;
         readonly WireWriter w = new WireWriter(96);
 
         public static void Install(Harmony h)
         {
             h.Patch(AccessTools.Method(typeof(ShopItemController), nameof(ShopItemController.Interact)),
                 prefix: new HarmonyMethod(typeof(ShopSync), nameof(InteractPrefix)));
+            h.Patch(AccessTools.Method(typeof(ShopItemController), "InitializeInternal"),
+                transpiler: new HarmonyMethod(typeof(ShopSync), nameof(ReuseSprite)));
+        }
+
+        // InitializeInternal adds a tk2dSprite to the controller's own GameObject every time.
+        // Reuse that component when replacing guest stock; destroying its GameObject destroys the shop item too.
+        static IEnumerable<CodeInstruction> ReuseSprite(IEnumerable<CodeInstruction> code)
+        {
+            foreach (var ci in code)
+            {
+                var method = ci.operand as MethodInfo;
+                if (method != null && method.DeclaringType == typeof(GameObject) && method.Name == "AddComponent" &&
+                    method.IsGenericMethod && method.GetGenericArguments()[0] == typeof(tk2dSprite))
+                {
+                    ci.opcode = OpCodes.Call;
+                    ci.operand = AccessTools.Method(typeof(ShopSync), nameof(ItemSprite));
+                }
+                yield return ci;
+            }
+        }
+
+        static tk2dSprite ItemSprite(GameObject go)
+        {
+            var existing = IsClient && scope ? go.GetComponent<tk2dSprite>() : null;
+            return existing ? existing : go.AddComponent<tk2dSprite>();
         }
 
         void Awake() { Instance = this; }
@@ -43,6 +71,7 @@ namespace GungeonOnline.Replication
         public void OnFloorChanged()
         {
             hostItems.Clear(); lastKey.Clear(); clientItems.Clear(); clientIdByInstance.Clear(); hostIds.Clear(); nextFullScan = 0;
+            LookAt = null;
         }
 
         static bool InteractPrefix(ShopItemController __instance, PlayerController player)
@@ -155,7 +184,17 @@ namespace GungeonOnline.Replication
                 {
                     var prefab = PickupObjectDatabase.GetById(itemId);
                     var parent = Traverse.Create(mine).Field("m_baseParentShop").GetValue<BaseShopController>();
-                    if (prefab != null && parent != null) { mine.Initialize(prefab, parent); Restocked++; }
+                    var legacyParent = Traverse.Create(mine).Field("m_parentShop").GetValue<ShopController>();
+                    if (prefab != null && (parent != null || legacyParent != null))
+                    {
+                        if (mine.sprite) SpriteOutlineManager.RemoveOutlineFromSprite(mine.sprite, true);
+                        mine.OverridePrice = null;
+                        mine.IsResourcefulRatKey = mine.SetsFlagOnSteal = false;
+                        if (parent != null) mine.Initialize(prefab, parent); else mine.Initialize(prefab, legacyParent);
+                        Restocked++;
+                        if (LookAt == null) LookAt = (Vector2)mine.transform.position; // tests: GO_SHOP_LOOK walks the guest here
+                        if (Dev.DevEnv.IsHarness) { var names = new System.Text.StringBuilder(); foreach (var sp in mine.GetComponentsInChildren<tk2dBaseSprite>(true)) names.Append(sp.name).Append(sp.renderer && sp.renderer.enabled ? "" : "(off)").Append(","); Plugin.Log.LogInfo($"ShopSync: restocked {(Vector2)mine.transform.position} with {prefab.DisplayName} sprites={names}"); }
+                    }
                 }
                 mine.CurrentPrice = price;
             }

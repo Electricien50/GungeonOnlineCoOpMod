@@ -51,7 +51,8 @@ namespace GungeonOnline.Replication
         void Start() { NetSession.Instance.SessionEnded += () => { hostTracked.Clear(); copies.Clear(); copyIds.Clear(); }; }
 
         /// <summary>Bullets the host owns: not from a player, able to hit players.</summary>
-        static bool HostOwned(Projectile p) => p != null && p.collidesWithPlayer && !(p.Owner is PlayerController);
+        static bool HostOwned(Projectile p) => p != null && p.collidesWithPlayer && !(p.Owner is PlayerController) &&
+            !p.name.StartsWith("ThrownGunProjectile", System.StringComparison.Ordinal);
 
         static string Key(Projectile p)
         {

@@ -35,6 +35,16 @@ namespace GungeonOnline.Game.NPlayers
         /// <summary>The game ends the run when "the other player" is down. With more players: only when nobody is left.</summary>
         static bool DiePrefix(PlayerController __instance)
         {
+            if (Session.NetSession.Active && !Players.AnyOtherAlive(__instance))
+            {
+                foreach (var p in Players.All)
+                    if (Traverse.Create(p).Field("m_cloneWaitingForCoopDeath").GetValue<bool>())
+                    {
+                        AccessTools.Method(typeof(PlayerController), "DoCloneEffect").Invoke(p, null);
+                        return false;
+                    }
+                if (RunSync.CloneInProgress) return false;
+            }
             if (!Players.NPlus || !Players.AnyOtherAlive(__instance)) return true;
             // What the game's own Die does before its two-player decision.
             __instance.DeathsThisRun++;
@@ -51,6 +61,7 @@ namespace GungeonOnline.Game.NPlayers
 
         static IEnumerator ReviveAllFromChest(Chest chest, bool doDelay)
         {
+            if (Session.NetSession.Active && !Session.NetSession.IsHost) yield break;
             if (doDelay) yield return new WaitForSeconds(0.7f);
             AkSoundEngine.PostEvent("play_obj_chest_open_01", chest.gameObject);
             AkSoundEngine.PostEvent("stop_obj_fuse_loop_01", chest.gameObject);
@@ -78,6 +89,7 @@ namespace GungeonOnline.Game.NPlayers
         /// </summary>
         static void ChestUsedPostfix(Chest __instance)
         {
+            if (Session.NetSession.Active && !Session.NetSession.IsHost) return;
             if (!Players.NPlus || !coopChests() || GameManager.Instance.NumberOfLivingPlayers <= 1) return;
             if (Players.Ghosts().Count == 0) return;
             __instance.StartCoroutine(ReviveAllFromChest(__instance, false));
@@ -85,6 +97,11 @@ namespace GungeonOnline.Game.NPlayers
 
         static bool ChestRevivePrefix(Chest __instance, bool doDelay, ref IEnumerator __result)
         {
+            if (Session.NetSession.Active && !Session.NetSession.IsHost)
+            {
+                __result = ReviveAllFromChest(__instance, doDelay);
+                return false;
+            }
             if (!Players.NPlus) return true;
             __result = ReviveAllFromChest(__instance, doDelay);
             return false;
@@ -92,6 +109,7 @@ namespace GungeonOnline.Game.NPlayers
 
         static bool PedestalRevivePrefix()
         {
+            if (Session.NetSession.Active && !Session.NetSession.IsHost) return false;
             if (!Players.NPlus) return true;
             var ghosts = Players.Ghosts();
             foreach (var g in ghosts)
@@ -109,7 +127,7 @@ namespace GungeonOnline.Game.NPlayers
         /// <summary>The game only arms the boss pedestal's revive when exactly one player is alive; arm it for any ghost.</summary>
         static void PedestalStartPostfix(RewardPedestal __instance)
         {
-            if (Players.NPlus && __instance.IsBossRewardPedestal && Players.Ghosts().Count > 0) __instance.ReturnCoopPlayerOnLand = true;
+            if (Players.NPlus && Session.NetSession.IsHost && __instance.IsBossRewardPedestal && Players.Ghosts().Count > 0) __instance.ReturnCoopPlayerOnLand = true;
         }
 
         /// <summary>

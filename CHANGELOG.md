@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.3
+
+- Classic co-op: a player pulled into a fight lands on clear floor inside the room instead of on the exact spot of the player who walked in, which was often the doorway and left them in the wall once the door sealed.
+- On joining, everyone's other mods are compared and any that differ are listed on both screens, before the run starts.
+- New r2modman package (GungeonOnline-<version>-r2modman.zip, Import local mod) that uses the mod manager's BepInEx pack.
+- Guests see Jammed enemies as Jammed and see the Lord of the Jammed. The host's jammed state and the Lord of the Jammed's position are sent to every guest; a guest's own curse roll no longer decides.
+- A guest still inside a run of their own (for example after the host picked Save run and quit) who joins a host in the Breach is taken to the Breach to pick a character, instead of the host waiting forever.
+- Guests see the host's boss reward pedestals and their exact items. Collecting a reward updates every screen.
+- Replacing guest shop stock reuses its sprite, preventing black pictures and duplicate sprites without deleting the shop item.
+- In Explore, a teammate who reaches a normal sealed combat door can enter the ongoing fight. Empty rooms held shut to prevent a second fight stay locked.
+- Clone restarts the run for everyone, including ghosts and the last player to die, whether the host or a guest owns it.
+- Revive chests, rainbow-chest type and locks follow the host. Boss-pedestal revives reach every machine, and scattered ground loot follows the host until it settles.
+- Dropped guns are synchronized as pickups, including guns from rainbow chests, instead of being missed inside their debris containers or treated as enemy projectiles. Rat theft is decided by the host.
+- Returning to the Breach and Quick Restart clear the old run on every machine, including the death-screen pause, instead of leaving guests loading forever.
+- A guest reconnecting during a floor change follows the host's newest floor as soon as it is ready.
+- Boss-reward messages no longer conflict with player-progress messages.
+- Custom enemies created at runtime by a content mod can be copied from the guest's generated actors, even when no prefab exists in the base-game enemy catalogue.
+- Floor generation resets both game random generators. If another mod still produces a different layout, the guest returns safely to the Breach with an explanation instead of playing in mismatched walls and rooms.
+- Tested with ExpandTheGungeon 3.0.8, MtG API 1.9.2 and the r2modman Gungeon BepInEx pack. The DLL targets BepInEx 5.4.21 so it also loads on that older mod-manager setup. Both players still need matching mods; this does not establish compatibility with every modpack.
+
 ## 1.1.2
 
 **Faster friends**

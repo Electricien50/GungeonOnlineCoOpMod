@@ -19,7 +19,9 @@ namespace GungeonOnline.Replication
     internal sealed class PickupSync : MonoBehaviour
     {
         public static PickupSync Instance { get; private set; }
-        const byte EvPickup = 50, EvPickupGone = 51, EvPickupReq = 52, EvGot = 53, EvChest = 54, EvChestReq = 55, EvChestOpened = 56, EvChestGone = 57, EvPedestal = 58, EvPedestalReq = 59;
+        const byte EvPickup = 50, EvPickupGone = 51, EvPickupReq = 52, EvGot = 53, EvChest = 54, EvChestReq = 55, EvChestOpened = 56, EvChestGone = 57;
+        // 58 belongs to StatSync. Keep the extra pickup messages in their own range.
+        const byte EvPedestal = 90, EvPedestalReq = 91, EvCoopChests = 92;
 
         static bool scope;
 
@@ -72,6 +74,11 @@ namespace GungeonOnline.Replication
             }
             h.Patch(AccessTools.Method(c, "Open"), postfix: new HarmonyMethod(typeof(PickupSync), nameof(ChestOpenPostfix)));
             h.Patch(AccessTools.Method(typeof(RewardPedestal), nameof(RewardPedestal.Interact)), prefix: new HarmonyMethod(typeof(PickupSync), nameof(PedestalInteractPrefix)));
+            h.Patch(AccessTools.Method(typeof(Chest), nameof(Chest.ToggleCoopChests)),
+                prefix: new HarmonyMethod(typeof(PickupSync), nameof(ClientChestBlock)),
+                postfix: new HarmonyMethod(typeof(PickupSync), nameof(CoopChestsPostfix)));
+            h.Patch(AccessTools.Method(typeof(PickupObject), "ShouldBeTakenByRat"),
+                prefix: new HarmonyMethod(typeof(PickupSync), nameof(RatTheftPrefix)));
             Plugin.Log.LogInfo($"PickupSync: patched {n} pickup types");
         }
 
@@ -88,6 +95,7 @@ namespace GungeonOnline.Replication
 
         public void OnFloorChanged()
         {
+            pickupPositions.Clear();
             hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostPedestals.Clear(); pedestalPickedSent.Clear(); clientPedestals.Clear(); pedestalIdByInstance.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear(); lastRequest.Clear();
             copies.Clear(); copyIdByInstance.Clear(); clientChests.Clear(); chestIdByInstance.Clear();
         }
@@ -127,6 +135,29 @@ namespace GungeonOnline.Replication
         }
 
         static bool ClientChestBlock() => !IsClient || scope;
+
+        static bool RatTheftPrefix(ref bool __result)
+        {
+            if (!IsClient) return true;
+            // The host decides theft too. A local rat otherwise removes a replicated item independently.
+            __result = false;
+            return false;
+        }
+
+        static readonly System.Reflection.FieldInfo coopMode = AccessTools.Field(typeof(Chest), "m_IsCoopMode");
+        static bool CoopChests => coopMode != null && (bool)coopMode.GetValue(null);
+
+        static byte[] CoopChestMsg()
+        {
+            var ww = new WireWriter(2);
+            ww.U8(EvCoopChests); ww.Bool(CoopChests);
+            return ww.ToArray();
+        }
+
+        static void CoopChestsPostfix()
+        {
+            if (IsHostSession && Instance != null) Instance.Send(CoopChestMsg());
+        }
 
         static void ChestOpenPostfix(Chest __instance)
         {
@@ -249,7 +280,14 @@ namespace GungeonOnline.Replication
         }
 
         static bool InWorld(PickupObject p) =>
-            p != null && p.gameObject.activeInHierarchy && p.transform.parent == null && !p.IsBeingSold && p.PickupObjectId >= 0;
+            p != null && p.gameObject.activeInHierarchy && !p.IsBeingSold && p.PickupObjectId >= 0 &&
+            (p.transform.parent == null || (p is Gun gun && gun.CurrentOwner == null && p.GetComponentInParent<DebrisObject>()));
+
+        static void RemoveWorldPickup(PickupObject p)
+        {
+            var debris = p is Gun ? p.GetComponentInParent<DebrisObject>() : null;
+            Destroy(debris ? debris.gameObject : p.gameObject);
+        }
 
         byte[] PickupMsg(uint id, PickupObject p)
         {
@@ -265,7 +303,7 @@ namespace GungeonOnline.Replication
             var ww = new WireWriter(64);
             ww.U8(EvChest); ww.U32(id); ww.Str(PrefabName(ch.name));
             Vector2 pos = ch.transform.position;
-            ww.F32(pos.x); ww.F32(pos.y); ww.Bool(ch.IsOpen);
+            ww.F32(pos.x); ww.F32(pos.y); ww.Bool(ch.IsOpen); ww.Bool(ch.IsRainbowChest); ww.Bool(ch.IsLocked);
             return ww.ToArray();
         }
 
@@ -285,12 +323,14 @@ namespace GungeonOnline.Replication
             {
                 if (!d) continue;
                 int k = d.GetInstanceID();
-                if (!pickupOfDebris.TryGetValue(k, out var p)) pickupOfDebris[k] = p = d.GetComponent<PickupObject>();
+                // Dropped guns sit inside a debris container, unlike passive items on the container itself.
+                if (!pickupOfDebris.TryGetValue(k, out var p) || !p) pickupOfDebris[k] = p = d.GetComponentInChildren<PickupObject>();
                 if (p) yield return p;
             }
         }
 
         readonly Dictionary<int, uint> hostIdByInstance = new Dictionary<int, uint>();
+        readonly Dictionary<uint, Vector2> pickupPositions = new Dictionary<uint, Vector2>();
 
         float nextPedestalScan;
 
@@ -308,7 +348,15 @@ namespace GungeonOnline.Replication
                     hostPickups[id] = p;
                     hostIdByInstance[p.GetInstanceID()] = id;
                     Send(PickupMsg(id, p));
+                    pickupPositions[id] = p.transform.position;
                     PickupsAnnounced++;
+                }
+                else if (!pickupPositions.TryGetValue(id, out var last) || ((Vector2)p.transform.position - last).sqrMagnitude > 0.01f)
+                {
+                    // Loot scatters after it spawns, especially eight items from a rainbow chest.
+                    // Follow it until it settles instead of leaving the guest's copy at its first position.
+                    pickupPositions[id] = p.transform.position;
+                    Send(PickupMsg(id, p));
                 }
                 seen.Add(id);
             }
@@ -317,6 +365,7 @@ namespace GungeonOnline.Replication
                 if (seen.Contains(id)) continue;
                 if (hostPickups[id]) hostIdByInstance.Remove(hostPickups[id].GetInstanceID());
                 hostPickups.Remove(id);
+                pickupPositions.Remove(id);
                 w.Reset(); w.U8(EvPickupGone); w.U32(id);
                 Send(w.ToArray());
             }
@@ -342,6 +391,7 @@ namespace GungeonOnline.Replication
         /// <summary>Host: a client became ready; send it everything on the ground and every chest.</summary>
         public void SendAllTo(Connection c)
         {
+            c.Send((byte)Channel.Event, CoopChestMsg(), Delivery.ReliableOrdered);
             foreach (var kv in hostPickups) if (kv.Value) c.Send((byte)Channel.Event, PickupMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
             foreach (var kv in hostChests) if (kv.Value) c.Send((byte)Channel.Event, ChestMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
             foreach (var kv in hostPedestals) if (kv.Value) c.Send((byte)Channel.Event, PedestalMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
@@ -356,6 +406,12 @@ namespace GungeonOnline.Replication
             {
                 switch (type)
                 {
+                    case EvCoopChests when !NetSession.IsHost:
+                        {
+                            bool coop = r.Bool();
+                            if (CoopChests != coop) Chest.ToggleCoopChests(coop);
+                            break;
+                        }
                     case EvPickupReq when NetSession.IsHost:
                         {
                             uint id = r.U32();
@@ -396,12 +452,20 @@ namespace GungeonOnline.Replication
                             uint id = r.U32();
                             int itemId = r.I32();
                             var pos = new Vector2(r.F32(), r.F32());
-                            if (copies.ContainsKey(id)) break;
+                            if (copies.TryGetValue(id, out var existing) && existing)
+                            {
+                                existing.transform.position = new Vector3(pos.x, pos.y, existing.transform.position.z);
+                                if (existing.specRigidbody) existing.specRigidbody.Reinitialize();
+                                break;
+                            }
                             var prefab = PickupObjectDatabase.GetById(itemId);
                             if (prefab == null) break;
-                            var go = Instantiate(prefab.gameObject, new Vector3(pos.x, pos.y, 0f), Quaternion.identity);
-                            var po = go.GetComponent<PickupObject>();
-                            if (po == null) { Destroy(go); break; }
+                            // Use the game's drop setup: guns need their debris container and interactable state,
+                            // and passive items need to appear in the same debris list we scan and reconcile.
+                            var debris = LootEngine.SpawnItem(prefab.gameObject, new Vector3(pos.x, pos.y, 0f), Vector2.zero, 0f, false);
+                            var po = debris ? debris.GetComponentInChildren<PickupObject>() : null;
+                            if (po == null) { if (debris) Destroy(debris.gameObject); break; }
+                            po.transform.position = new Vector3(pos.x, pos.y, po.transform.position.z);
                             copies[id] = po;
                             copyIdByInstance[po.GetInstanceID()] = id;
                             PrepareCopy(po, pos);
@@ -411,7 +475,7 @@ namespace GungeonOnline.Replication
                     case EvPickupGone when !NetSession.IsHost:
                         {
                             uint id = r.U32();
-                            if (copies.TryGetValue(id, out var p) && p) { copyIdByInstance.Remove(p.GetInstanceID()); Destroy(p.gameObject); }
+                            if (copies.TryGetValue(id, out var p) && p) { copyIdByInstance.Remove(p.GetInstanceID()); RemoveWorldPickup(p); }
                             copies.Remove(id);
                             break;
                         }
@@ -433,14 +497,25 @@ namespace GungeonOnline.Replication
                             string name = r.Str();
                             var pos = new Vector2(r.F32(), r.F32());
                             bool open = r.Bool();
+                            bool rainbow = r.Bool(), locked = r.Bool();
                             // Re-announcements (resync, late join) update the chest we already have.
                             if (clientChests.TryGetValue(id, out var known) && known)
                             {
+                                ConfigureChest(known, rainbow, locked);
                                 if (open && !known.IsOpen) known.ForceOpen(PlayerSlots.Local);
                                 break;
                             }
-                            var ch = NearestChest(pos) ?? SpawnChest(name, pos);
+                            var ch = NearestChest(pos);
+                            if (ch && PrefabName(ch.name) != name)
+                            {
+                                // Different saves and rainbow rules can roll a different chest at this spot.
+                                ch.DeregisterChestOnMinimap();
+                                Destroy(ch.gameObject);
+                                ch = null;
+                            }
+                            ch = ch ?? SpawnChest(name, pos);
                             if (ch == null) break;
+                            ConfigureChest(ch, rainbow, locked);
                             clientChests[id] = ch;
                             chestIdByInstance[ch.GetInstanceID()] = id;
                             ChestsMapped++;
@@ -469,7 +544,7 @@ namespace GungeonOnline.Replication
         static void PrepareCopy(PickupObject po, Vector2 pos)
         {
             // A dropped item normally arrives as debris that settles; the copy is placed where the host's is.
-            var debris = po.GetComponent<DebrisObject>();
+            var debris = po.GetComponentInParent<DebrisObject>();
             if (debris) debris.enabled = false;
             if (po.specRigidbody) po.specRigidbody.Reinitialize();
             var room = pos.GetAbsoluteRoom();
@@ -479,7 +554,7 @@ namespace GungeonOnline.Replication
         static Chest NearestChest(Vector2 pos)
         {
             Chest best = null;
-            float bestD = 1f;
+            float bestD = 2.25f; // revive transformations shift a chest sideways by a few pixels
             foreach (var ch in StaticReferenceManager.AllChests)
             {
                 if (!ch || chestIdByInstance.ContainsKey(ch.GetInstanceID())) continue;
@@ -497,6 +572,17 @@ namespace GungeonOnline.Replication
                     return Chest.Spawn(c, new Vector3(pos.x, pos.y, 0f), pos.GetAbsoluteRoom(), true);
             Plugin.Log.LogWarning("PickupSync: unknown chest " + name);
             return null;
+        }
+
+        static void ConfigureChest(Chest chest, bool rainbow, bool locked)
+        {
+            if (rainbow && !chest.IsRainbowChest) chest.BecomeRainbowChest();
+            // Revive chests are unlocked by the game's transform coroutine, after this message is applied.
+            if (!CoopChests && chest.IsLocked != locked)
+            {
+                chest.IsLocked = locked;
+                if (chest.LockAnimator && !locked) chest.LockAnimator.renderer.enabled = false;
+            }
         }
 
         // ---------------- Frame ----------------
@@ -519,7 +605,7 @@ namespace GungeonOnline.Replication
             foreach (var p in new List<PickupObject>(WorldPickups()))
             {
                 if (!InWorld(p) || copyIdByInstance.ContainsKey(p.GetInstanceID())) continue;
-                Destroy(p.gameObject);
+                RemoveWorldPickup(p);
                 LocalPurged++;
             }
         }
