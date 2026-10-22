@@ -19,7 +19,7 @@ namespace GungeonOnline.Replication
     internal sealed class PickupSync : MonoBehaviour
     {
         public static PickupSync Instance { get; private set; }
-        const byte EvPickup = 50, EvPickupGone = 51, EvPickupReq = 52, EvGot = 53, EvChest = 54, EvChestReq = 55, EvChestOpened = 56, EvChestGone = 57;
+        const byte EvPickup = 50, EvPickupGone = 51, EvPickupReq = 52, EvGot = 53, EvChest = 54, EvChestReq = 55, EvChestOpened = 56, EvChestGone = 57, EvPedestal = 58, EvPedestalReq = 59;
 
         static bool scope;
 
@@ -71,6 +71,7 @@ namespace GungeonOnline.Replication
                 if (m != null) h.Patch(m, prefix: new HarmonyMethod(typeof(PickupSync), nameof(ClientChestBlock)));
             }
             h.Patch(AccessTools.Method(c, "Open"), postfix: new HarmonyMethod(typeof(PickupSync), nameof(ChestOpenPostfix)));
+            h.Patch(AccessTools.Method(typeof(RewardPedestal), nameof(RewardPedestal.Interact)), prefix: new HarmonyMethod(typeof(PickupSync), nameof(PedestalInteractPrefix)));
             Plugin.Log.LogInfo($"PickupSync: patched {n} pickup types");
         }
 
@@ -80,14 +81,14 @@ namespace GungeonOnline.Replication
         {
             NetSession.Instance.SessionEnded += () =>
             {
-                hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); copies.Clear(); copyIdByInstance.Clear();
+                hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostPedestals.Clear(); pedestalPickedSent.Clear(); clientPedestals.Clear(); pedestalIdByInstance.Clear(); copies.Clear(); copyIdByInstance.Clear();
                 clientChests.Clear(); chestIdByInstance.Clear();
             };
         }
 
         public void OnFloorChanged()
         {
-            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear(); lastRequest.Clear();
+            hostPickups.Clear(); hostChests.Clear(); chestOpenSent.Clear(); hostPedestals.Clear(); pedestalPickedSent.Clear(); clientPedestals.Clear(); pedestalIdByInstance.Clear(); hostIdByInstance.Clear(); pickupOfDebris.Clear(); lastRequest.Clear();
             copies.Clear(); copyIdByInstance.Clear(); clientChests.Clear(); chestIdByInstance.Clear();
         }
 
@@ -138,6 +139,92 @@ namespace GungeonOnline.Replication
                     w.Reset(); w.U8(EvChestOpened); w.U32(kv.Key);
                     Instance.Send(w.ToArray());
                 }
+        }
+
+        // ---------------- Boss reward pedestals ----------------
+        // Only the host's game spawns them (the guest's copy of a boss dies without its room reward). The host
+        // announces each one with its item; the guest builds the same pedestal holding the same item, and taking it
+        // goes through the host like a chest, so the item arrives through the normal give.
+
+        readonly Dictionary<uint, RewardPedestal> hostPedestals = new Dictionary<uint, RewardPedestal>();
+        readonly Dictionary<uint, bool> pedestalPickedSent = new Dictionary<uint, bool>();
+        readonly Dictionary<uint, RewardPedestal> clientPedestals = new Dictionary<uint, RewardPedestal>();
+        static readonly Dictionary<int, uint> pedestalIdByInstance = new Dictionary<int, uint>();
+        public int PedestalsShown;
+
+        static bool PedestalInteractPrefix(RewardPedestal __instance, PlayerController player)
+        {
+            if (!IsClient || scope) return true;
+            if (pedestalIdByInstance.TryGetValue(__instance.GetInstanceID(), out var id) && player == PlayerSlots.Local && !__instance.pickedUp)
+                Instance.Request(EvPedestalReq, id);
+            return false;
+        }
+
+        byte[] PedestalMsg(uint id, RewardPedestal rp)
+        {
+            var ww = new WireWriter(64);
+            ww.U8(EvPedestal); ww.U32(id); ww.Str(PrefabName(rp.name));
+            Vector2 pos = rp.transform.position;
+            ww.F32(pos.x); ww.F32(pos.y);
+            ww.I32(rp.contents ? rp.contents.PickupObjectId : -1);
+            ww.Bool(rp.pickedUp);
+            return ww.ToArray();
+        }
+
+        void ScanPedestals()
+        {
+            foreach (var rp in FindObjectsOfType<RewardPedestal>())
+            {
+                if (!rp || rp.contents == null) continue; // contents are chosen a moment after it appears
+                uint id = 0;
+                foreach (var kv in hostPedestals) if (kv.Value == rp) { id = kv.Key; break; }
+                if (id == 0) { id = nextId++; hostPedestals[id] = rp; pedestalPickedSent[id] = rp.pickedUp; Send(PedestalMsg(id, rp)); continue; }
+                if (pedestalPickedSent[id] != rp.pickedUp) { pedestalPickedSent[id] = rp.pickedUp; Send(PedestalMsg(id, rp)); }
+            }
+            foreach (var id in new List<uint>(hostPedestals.Keys))
+                if (!hostPedestals[id]) { hostPedestals.Remove(id); pedestalPickedSent.Remove(id); }
+        }
+
+        static RewardPedestal PedestalPrefab(string name)
+        {
+            foreach (var rp in Resources.FindObjectsOfTypeAll<RewardPedestal>())
+                if (rp && !rp.gameObject.scene.IsValid() && rp.name == name) return rp;
+            return null;
+        }
+
+        void ShowPedestal(uint id, string name, Vector2 pos, int itemId, bool picked)
+        {
+            if (clientPedestals.TryGetValue(id, out var have) && have)
+            {
+                if (picked && !have.pickedUp) HidePedestalItem(have);
+                return;
+            }
+            var prefab = PedestalPrefab(name);
+            var item = itemId >= 0 ? PickupObjectDatabase.GetById(itemId) : null;
+            if (prefab == null || item == null) { Plugin.Log.LogWarning($"PickupSync: cannot show pedestal {name} item {itemId}"); return; }
+            var room = GameManager.Instance.Dungeon ? GameManager.Instance.Dungeon.data.GetAbsoluteRoomFromPosition(pos.ToIntVector2(VectorConversions.Floor)) : null;
+            // Built from the prefab with the host's item; never a mimic, and its landing never revives anyone here.
+            bool specific = prefab.UsesSpecificItem; int specificId = prefab.SpecificItemId; float mimic = prefab.overrideMimicChance; bool coop = prefab.ReturnCoopPlayerOnLand;
+            prefab.UsesSpecificItem = true; prefab.SpecificItemId = itemId; prefab.overrideMimicChance = 0f; prefab.ReturnCoopPlayerOnLand = false;
+            RewardPedestal rp;
+            try { rp = RewardPedestal.Spawn(prefab, pos.ToIntVector2(VectorConversions.Floor), room); }
+            finally { prefab.UsesSpecificItem = specific; prefab.SpecificItemId = specificId; prefab.overrideMimicChance = mimic; prefab.ReturnCoopPlayerOnLand = coop; }
+            if (!rp) return;
+            rp.transform.position = new Vector3(pos.x, pos.y, rp.transform.position.z);
+            if (rp.specRigidbody) rp.specRigidbody.Reinitialize();
+            clientPedestals[id] = rp;
+            pedestalIdByInstance[rp.GetInstanceID()] = id;
+            PedestalsShown++;
+            if (picked) HidePedestalItem(rp);
+        }
+
+        static readonly System.Reflection.FieldInfo itemDisplay = AccessTools.Field(typeof(RewardPedestal), "m_itemDisplaySprite");
+
+        static void HidePedestalItem(RewardPedestal rp)
+        {
+            rp.pickedUp = true;
+            var spr = itemDisplay?.GetValue(rp) as tk2dBaseSprite;
+            if (spr) Destroy(spr.gameObject);
         }
 
         // ---------------- Host ----------------
@@ -205,8 +292,12 @@ namespace GungeonOnline.Replication
 
         readonly Dictionary<int, uint> hostIdByInstance = new Dictionary<int, uint>();
 
+        float nextPedestalScan;
+
         void HostScan()
         {
+            // Pedestals are rare and not in any game list: look for them twice a second, not every frame.
+            if (Time.realtimeSinceStartup >= nextPedestalScan) { nextPedestalScan = Time.realtimeSinceStartup + 0.5f; ScanPedestals(); }
             var seen = new HashSet<uint>();
             foreach (var p in WorldPickups())
             {
@@ -253,6 +344,7 @@ namespace GungeonOnline.Replication
         {
             foreach (var kv in hostPickups) if (kv.Value) c.Send((byte)Channel.Event, PickupMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
             foreach (var kv in hostChests) if (kv.Value) c.Send((byte)Channel.Event, ChestMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
+            foreach (var kv in hostPedestals) if (kv.Value) c.Send((byte)Channel.Event, PedestalMsg(kv.Key, kv.Value), Delivery.ReliableOrdered);
         }
 
         // ---------------- Both: event router (types 50-59) ----------------
@@ -273,6 +365,23 @@ namespace GungeonOnline.Replication
                                 scope = false; // let the normal pickup path (and its broadcast) run
                                 if (p is IPlayerInteractable ia) ia.Interact(player); else p.Pickup(player);
                             }
+                            break;
+                        }
+                    case EvPedestalReq when NetSession.IsHost:
+                        {
+                            uint id = r.U32();
+                            var player = PlayerSlots.ForSlot(c.Slot);
+                            if (hostPedestals.TryGetValue(id, out var rp) && rp && !rp.pickedUp && player) { scope = false; rp.Interact(player); }
+                            break;
+                        }
+                    case EvPedestal when !NetSession.IsHost:
+                        {
+                            uint id = r.U32();
+                            string name = r.Str();
+                            var pos = new Vector2(r.F32(), r.F32());
+                            int itemId = r.I32();
+                            bool picked = r.Bool();
+                            ShowPedestal(id, name, pos, itemId, picked);
                             break;
                         }
                     case EvChestReq when NetSession.IsHost:

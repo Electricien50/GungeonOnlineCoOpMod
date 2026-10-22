@@ -226,6 +226,103 @@ namespace GungeonOnline.Dev
             elevStep = 3;
         }
 
+        // GO_BOSS_KILL_AT=seconds (host): the boss dies then, as if shot down, so boss reward tests do not depend on the bot.
+        bool bossKilled;
+        float bossLogAt;
+        void BossKill()
+        {
+            if (bossKilled || !Session.NetSession.IsHost) return;
+            if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_BOSS_KILL_AT"), out var at) || Time.realtimeSinceStartup < at) return;
+            var me = GameManager.Instance.PrimaryPlayer;
+            var room = me ? me.CurrentRoom : null;
+            if (Time.realtimeSinceStartup > bossLogAt)
+            {
+                bossLogAt = Time.realtimeSinceStartup + 5f;
+                int n = 0, inRoom = 0;
+                foreach (var e in StaticReferenceManager.AllEnemies) if (e) { n++; if (e.ParentRoom == room) inRoom++; }
+                Plugin.Log.LogInfo($"Harness: boss kill check room={(room != null ? room.GetRoomName() : "-")} cat={(room != null && room.area != null ? room.area.PrototypeRoomCategory.ToString() : "-")} enemies={n} inRoom={inRoom}");
+            }
+            if (room == null || room.area == null || room.area.PrototypeRoomCategory != PrototypeDungeonRoom.RoomCategory.BOSS) return;
+            foreach (var e in new System.Collections.Generic.List<AIActor>(StaticReferenceManager.AllEnemies))
+                if (e && e.healthHaver && !e.healthHaver.IsDead && e.ParentRoom == room && e.CompanionOwner == null)
+                {
+                    bossKilled = true;
+                    Plugin.Log.LogInfo($"Harness: killing {e.name} (boss={e.healthHaver.IsBoss})");
+                    e.healthHaver.ApplyDamage(1e6f, Vector2.zero, "harness", CoreDamageTypes.None, DamageCategory.Unstoppable, true);
+                }
+        }
+
+        // GO_DEATH_BUTTON=menu|quick (host): 8 s after the death screen shows, press its Main menu or Quick restart.
+        float deathSeen = -1f;
+        bool deathPressed;
+        void DeathButton()
+        {
+            var which = System.Environment.GetEnvironmentVariable("GO_DEATH_BUTTON");
+            if (deathPressed || string.IsNullOrEmpty(which) || !Session.NetSession.IsHost) return;
+            var page = Object.FindObjectOfType<AmmonomiconDeathPageController>();
+            if (!page) { deathSeen = -1f; return; }
+            if (deathSeen < 0) { deathSeen = Time.realtimeSinceStartup; Plugin.Log.LogInfo("Harness: death screen up"); }
+            if (Time.realtimeSinceStartup - deathSeen < 8f) return;
+            deathPressed = true;
+            string m = which == "quick" ? "DoQuickRestart" : "DoMainMenu";
+            Plugin.Log.LogInfo("Harness: host presses " + m);
+            var mi = HarmonyLib.AccessTools.Method(typeof(AmmonomiconDeathPageController), m);
+            var args = new object[mi.GetParameters().Length];
+            for (int i = 0; i < args.Length; i++) args[i] = mi.GetParameters()[i].ParameterType.IsValueType ? System.Activator.CreateInstance(mi.GetParameters()[i].ParameterType) : null;
+            mi.Invoke(page, args);
+        }
+
+        // GO_PEDESTAL_TAKE=seconds: each player takes the nearest boss pedestal then (the guest's goes through the host).
+        bool pedestalTaken;
+        void PedestalTake()
+        {
+            if (pedestalTaken || !float.TryParse(System.Environment.GetEnvironmentVariable("GO_PEDESTAL_TAKE"), out var at) || Time.realtimeSinceStartup < at) return;
+            var me = GameManager.Instance.PrimaryPlayer;
+            if (!me) return;
+            RewardPedestal best = null; float bd = 1e9f;
+            foreach (var r in Object.FindObjectsOfType<RewardPedestal>())
+            {
+                if (!r || r.pickedUp) continue;
+                // Host takes the left one, guest the right one, so both get one.
+                float d = Session.NetSession.IsHost ? r.transform.position.x : -r.transform.position.x;
+                if (d < bd) { bd = d; best = r; }
+            }
+            if (!best) return;
+            pedestalTaken = true;
+            Plugin.Log.LogInfo($"Harness: taking pedestal at {(Vector2)best.transform.position} item={(best.contents ? best.contents.DisplayName : "-")}");
+            me.transform.position = best.transform.position + new Vector3(0.5f, -1f, 0f);
+            me.specRigidbody.Reinitialize();
+            best.Interact(me);
+        }
+
+        float nextPedestalLog;
+        void PedestalLog()
+        {
+            if (Time.realtimeSinceStartup < nextPedestalLog) return;
+            nextPedestalLog = Time.realtimeSinceStartup + 10f;
+            var sb = new System.Text.StringBuilder();
+            foreach (var r in Object.FindObjectsOfType<RewardPedestal>())
+            {
+                if (!r) continue;
+                bool drawn = r.sprite && r.sprite.renderer && r.sprite.renderer.enabled;
+                sb.Append($" [{(Vector2)r.transform.position} drawn={drawn} active={r.gameObject.activeInHierarchy} item={(r.contents ? r.contents.DisplayName : "-")} picked={r.pickedUp}]");
+            }
+            if (sb.Length > 0) Plugin.Log.LogInfo("Harness: pedestals" + sb);
+        }
+
+        // GO_BREACH_AT=seconds (host): quit the run back to the Breach, as the pause menu's Quit does (a reported bug:
+        // the guest then sat on an endless loading screen).
+        bool breachDone;
+        void BreachReturn()
+        {
+            if (breachDone || !Session.NetSession.IsHost || Game.SceneObjects.InBreach) return;
+            if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_BREACH_AT"), out var at) || Time.realtimeSinceStartup < at) return;
+            if (GameManager.Instance.IsLoadingLevel || GameManager.Instance.PrimaryPlayer == null) return;
+            breachDone = true;
+            Plugin.Log.LogInfo("Harness: host quits to the Breach");
+            GameManager.Instance.DelayedReturnToFoyer(0.5f);
+        }
+
         // GO_STATUE_SWAP=PlayerBullet (client): 8 s after both players stand in the Breach, swap to that character at its
         // statue, as a player walking up to it would (a reported bug: the host then teleported the guest into a wall).
         float statueSince = -1f;
@@ -700,6 +797,11 @@ namespace GungeonOnline.Dev
             // The swap test crosses the title screen, where the rest of the harness update can throw: keep it apart.
             try { SwapTest(Time.realtimeSinceStartup); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: swap step error " + e.Message); }
             try { StatueSwap(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: statue swap error " + e.Message); }
+            try { BreachReturn(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: breach return error " + e.Message); }
+            try { BossKill(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: boss kill error " + e.Message); }
+            try { DeathButton(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: death button error " + e); }
+            try { PedestalTake(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: pedestal take error " + e.Message); }
+            try { PedestalLog(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: pedestal log error " + e.Message); }
             try { HarnessUpdate(); }
             catch (System.Exception e)
             {
