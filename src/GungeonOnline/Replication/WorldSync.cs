@@ -126,6 +126,7 @@ namespace GungeonOnline.Replication
             if (!IsClient || ApplyingHost || Instance == null || !Instance.FloorReady) return true;
             if (__instance.GetComponent<PlayerController>() != null || __instance.CompanionOwner != null) return true;
             if (NetIds.Has(__instance)) return true;
+            if (IsTemplate(__instance)) return true;
             RememberModEnemy(__instance);
             Instance.LocalActorsSuppressed++;
             __instance.EraseFromExistence(true);
@@ -198,7 +199,7 @@ namespace GungeonOnline.Replication
             SendEvent(w.ToArray());
         }
 
-        static bool Replicated(AIActor a) => a != null && !(a is null) && a.gameObject.activeInHierarchy && a.GetComponent<PlayerController>() == null;
+        static bool Replicated(AIActor a) => a != null && !(a is null) && a.gameObject.activeInHierarchy && a.GetComponent<PlayerController>() == null && !IsTemplate(a);
 
         byte[] SpawnMessage(uint id, AIActor a)
         {
@@ -421,6 +422,7 @@ namespace GungeonOnline.Replication
             {
                 if (a == null || a.GetComponent<PlayerController>() != null) continue;
                 if (a.CompanionOwner != null) continue; // owned companions are per machine; unowned critters replicate
+                if (IsTemplate(a)) continue;
                 RememberModEnemy(a);
                 erasing = true;
                 // One enemy's own death code failing (a boss door mimic did) must not stop the rest: this floor
@@ -625,6 +627,17 @@ namespace GungeonOnline.Replication
 
         static readonly Dictionary<string, AIActor> modEnemyPrefabs = new Dictionary<string, AIActor>();
         static GameObject modTemplateRoot;
+
+        /// <summary>Content mods keep their enemy and boss templates alive outside the level, in the scene kept across
+        /// loads. Those are not enemies on this floor: erasing them breaks the mod's enemy lookups
+        /// and every later floor fails to generate.</summary>
+        static bool IsTemplate(AIActor a)
+        {
+            var go = a.gameObject;
+            if (!go.scene.IsValid() || go.scene.name == "DontDestroyOnLoad") return true;
+            if (modTemplateRoot && go.transform.IsChildOf(modTemplateRoot.transform)) return true;
+            return false;
+        }
 
         static void RememberModEnemy(AIActor actor)
         {

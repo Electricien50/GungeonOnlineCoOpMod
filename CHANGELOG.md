@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4
+
+- Content mods (ExpandTheGungeon, Planetside of Gunymede, Modular, GungeonCraft and other enemy and room mods): a guest no longer gets stuck loading every floor after the first. Joining used to remove the mods' own enemy and boss templates along with the Breach's enemies, which broke the mods' enemy lookups and stopped the guest's floors from generating.
+- Breach mods that remove or switch off the game's Breach object no longer stop guests from picking a character.
+- A HUD error that repeated every frame with some modpacks is fixed.
+
 ## 1.1.3
 
 - Classic co-op: a player pulled into a fight lands on clear floor inside the room instead of on the exact spot of the player who walked in, which was often the doorway and left them in the wall once the door sealed.

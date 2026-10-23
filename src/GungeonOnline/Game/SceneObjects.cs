@@ -22,18 +22,36 @@ namespace GungeonOnline.Game
             GameManager.HasInstance && GameManager.Instance.Dungeon != null && !InBreach && !GameManager.Instance.IsLoadingLevel;
 
         static int breachFrame = -1;
-        static Foyer breach;
+        static Foyer breach, inactiveBreach;
 
         /// <summary>The Breach object, looked up once per frame (the game's getter searches the scene whenever it is absent).</summary>
         public static Foyer Breach
         {
             get
             {
-                if (breachFrame != Time.frameCount) { breachFrame = Time.frameCount; breach = Foyer.Instance; }
+                if (breachFrame != Time.frameCount)
+                {
+                    breachFrame = Time.frameCount;
+                    breach = Foyer.Instance;
+                    // Some Breach mods switch the game's Breach object off, and Foyer.Instance only finds active ones.
+                    if (breach == null && GameManager.HasInstance && GameManager.Instance.IsFoyer)
+                    {
+                        if (inactiveBreach == null || !inactiveBreach)
+                        {
+                            inactiveBreach = null;
+                            foreach (var f in Resources.FindObjectsOfTypeAll<Foyer>())
+                                if (f && f.gameObject.scene.IsValid()) { inactiveBreach = f; break; }
+                        }
+                        breach = inactiveBreach;
+                    }
+                }
                 return breach;
             }
         }
 
-        public static bool InBreach => Breach != null;
+        /// <summary>In the Breach. Some Breach mods remove or switch off the game's Breach object, and the game's own
+        /// flag can lag behind; the Breach level itself is always Base_Foyer.</summary>
+        public static bool InBreach => Breach != null || (GameManager.HasInstance && GameManager.Instance.Dungeon != null &&
+            GameManager.Instance.Dungeon.name.StartsWith("Base_Foyer", System.StringComparison.Ordinal));
     }
 }

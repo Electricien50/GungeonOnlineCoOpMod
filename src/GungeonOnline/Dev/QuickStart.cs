@@ -21,7 +21,7 @@ namespace GungeonOnline.Dev
             if (!DevEnv.IsHarness) yield break;
             string want = System.Environment.GetEnvironmentVariable("GO_CHAR");
             if (string.IsNullOrEmpty(want)) want = "PlayerRogue";
-            float giveUp = Time.realtimeSinceStartup + 120f;
+            float giveUp = Time.realtimeSinceStartup + 300f; // big modpacks take minutes to load the Breach
             FoyerCharacterSelectFlag pick = null;
             while (Time.realtimeSinceStartup < giveUp)
             {
@@ -34,7 +34,7 @@ namespace GungeonOnline.Dev
                         {
                             bool unlocked = f.PrerequisitesFulfilled();
                             bool wanted = f.CharacterPrefabPath.EndsWith(want);
-                            if (wanted && unlocked) pick = f;
+                            if (wanted && (unlocked || Time.realtimeSinceStartup > giveUp - 280f)) pick = f; // mods can lock every statue on a blank test save
                             else if (!wanted && unlocked && carrier == null) carrier = f;
                         }
                     // A blank test save has not unlocked the Robot, Bullet, Paradox or Gunslinger and the game removes
@@ -49,7 +49,13 @@ namespace GungeonOnline.Dev
                 }
                 yield return null;
             }
-            if (pick == null) { Plugin.Log.LogWarning("QuickStart: character flag not found: " + want); yield break; }
+            if (pick == null)
+            {
+                var seen = new System.Text.StringBuilder();
+                foreach (var f in Object.FindObjectsOfType<FoyerCharacterSelectFlag>()) seen.Append(" [" + f.CharacterPrefabPath + " coop=" + f.IsCoopCharacter + " alt=" + f.IsAlternateCostume + "]");
+                Plugin.Log.LogWarning("QuickStart: character flag not found: " + want + " breach=" + Game.SceneObjects.InBreach + " player=" + (GameManager.HasInstance && GameManager.Instance.PrimaryPlayer != null) + " isFoyer=" + (GameManager.HasInstance && GameManager.Instance.IsFoyer) + " foyers=" + Resources.FindObjectsOfTypeAll<Foyer>().Length + " scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + " dungeon=" + (GameManager.HasInstance && GameManager.Instance.Dungeon ? GameManager.Instance.Dungeon.name + "/" + GameManager.Instance.Dungeon.tileIndices.tilesetId : "none") + " flags:" + seen);
+                yield break;
+            }
             Plugin.Log.LogInfo("QuickStart: found flag, selecting shortly");
             yield return new WaitForSeconds(1f);
             if (GameManager.Instance.PrimaryPlayer != null) { Plugin.Log.LogInfo("QuickStart: player already chosen"); ScenarioRunner.Begin(); yield break; }

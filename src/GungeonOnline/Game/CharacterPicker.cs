@@ -29,6 +29,7 @@ namespace GungeonOnline.Game
             // The Paradox and Gunslinger statues cost Hegemony Credits each time. This pick only brings back the
             // character already paid for (rejoin, resumed run), so whatever the statue takes is given back.
             float creditsBefore = GameStatsManager.HasInstance ? GameStatsManager.Instance.GetPlayerStatValue(TrackedStats.META_CURRENCY) : 0f;
+            if (!SceneObjects.Breach) yield break;
             SceneObjects.Breach.StartCoroutine(SceneObjects.Breach.OnSelectedCharacter(0.05f, pick));
             while (GameManager.Instance.PrimaryPlayer == null && Time.realtimeSinceStartup < giveUp + 10f) yield return null;
             yield return null;

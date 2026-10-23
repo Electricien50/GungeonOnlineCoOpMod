@@ -355,7 +355,7 @@ namespace GungeonOnline.Game
             bool fromFoyer = Game.SceneObjects.InBreach;
             if (Pixelator.Instance) Pixelator.Instance.FadeToBlack(0.2f);
             gm.LoadNextLevel();
-            if (fromFoyer) Game.SceneObjects.Breach.OnDepartedFoyer();
+            if (fromFoyer && Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
         }
 
         readonly System.Collections.Generic.Dictionary<Connection, float> lastRejoin = new System.Collections.Generic.Dictionary<Connection, float>();

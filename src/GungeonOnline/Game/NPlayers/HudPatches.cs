@@ -239,7 +239,7 @@ namespace GungeonOnline.Game.NPlayers
         public static bool HeartRow(GameUIRoot ui, int id, out Rect row)
         {
             row = default(Rect);
-            if (!ui || ui.heartControllers == null || id >= ui.heartControllers.Count || !ui.heartControllers[id]) return false;
+            if (!ui || ui.heartControllers == null || id < 0 || id >= ui.heartControllers.Count || !ui.heartControllers[id]) return false;
             var panel = ui.heartControllers[id].GetComponent<dfControl>();
             if (!panel || !panel.IsVisible) return false;
             float x0 = float.MaxValue, x1 = float.MinValue, y0 = float.MaxValue, y1 = float.MinValue;

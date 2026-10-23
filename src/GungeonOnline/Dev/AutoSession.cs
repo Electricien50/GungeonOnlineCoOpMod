@@ -22,7 +22,7 @@ namespace GungeonOnline.Dev
             yield return new UnityEngine.WaitForSeconds(3f);
             UnityEngine.Debug.Log("Harness: resuming run, leaving the Breach");
             GameManager.Instance.DelayedLoadNextLevel(0.5f);
-            Game.SceneObjects.Breach.OnDepartedFoyer();
+            if (Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
         }
 
         /// <summary>Harness: wait for the host instance to write its Steam id, then join it over Steam.</summary>
@@ -56,7 +56,7 @@ namespace GungeonOnline.Dev
             UnityEngine.Debug.Log("Harness: leaving the Breach alone, offline");
             Pixelator.Instance.FadeToBlack(0.5f);
             GameManager.Instance.DelayedLoadNextLevel(0.75f);
-            Game.SceneObjects.Breach.OnDepartedFoyer();
+            if (Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
             yield return new UnityEngine.WaitForSeconds(3f);
             while (GameManager.Instance.IsLoadingLevel || !Game.SceneObjects.OnDungeonFloor || GameManager.Instance.PrimaryPlayer == null) yield return null;
             yield return new UnityEngine.WaitForSeconds(8f);
@@ -73,7 +73,7 @@ namespace GungeonOnline.Dev
             UnityEngine.Debug.Log("Harness: guest leaving the Breach alone, offline");
             Pixelator.Instance.FadeToBlack(0.5f);
             GameManager.Instance.DelayedLoadNextLevel(0.75f);
-            Game.SceneObjects.Breach.OnDepartedFoyer();
+            if (Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
             yield return new UnityEngine.WaitForSeconds(3f);
             while (GameManager.Instance.IsLoadingLevel || !Game.SceneObjects.OnDungeonFloor || GameManager.Instance.PrimaryPlayer == null) yield return null;
             yield return new UnityEngine.WaitForSeconds(5f);

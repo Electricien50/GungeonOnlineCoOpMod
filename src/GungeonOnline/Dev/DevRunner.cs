@@ -571,7 +571,7 @@ namespace GungeonOnline.Dev
                 Plugin.Log.LogInfo($"Harness: after the statue, p1={p1} p2={p2} statues out={shown} players={gm.AllPlayers.Length}");
                 Pixelator.Instance.FadeToBlack(0.5f);
                 gm.DelayedLoadNextLevel(0.75f);
-                Game.SceneObjects.Breach.OnDepartedFoyer();
+                if (Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
                 couchStep = 3; couchAt = now + 25f;
             }
             else if (couchStep == 3)
@@ -919,7 +919,7 @@ namespace GungeonOnline.Dev
                     Plugin.Log.LogInfo("Harness: host leaving the Breach");
                     Pixelator.Instance.FadeToBlack(0.5f);
                     GameManager.Instance.DelayedLoadNextLevel(0.75f);
-                    Game.SceneObjects.Breach.OnDepartedFoyer();
+                    if (Game.SceneObjects.Breach) Game.SceneObjects.Breach.OnDepartedFoyer();
                 }
             }
             UiDump.Tick();

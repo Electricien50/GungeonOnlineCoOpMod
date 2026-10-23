@@ -152,6 +152,7 @@ namespace GungeonOnline.Dev
         static InputFrame Loot(PlayerController me, float t)
         {
             var f = new InputFrame();
+            if (!GameManager.HasInstance || GameManager.Instance.Dungeon == null || GameManager.Instance.Dungeon.data == null) return f; // floor still loading
             Vector2? target = null;
             float bestD = 1e9f;
             foreach (var p in UnityEngine.Object.FindObjectsOfType<PickupObject>())
