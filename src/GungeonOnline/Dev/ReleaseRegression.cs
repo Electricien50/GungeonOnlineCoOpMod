@@ -40,6 +40,7 @@ namespace GungeonOnline.Dev
             string mode = Environment.GetEnvironmentVariable("GO_REGRESSION");
             if (!DevEnv.IsHarness || string.IsNullOrEmpty(mode)) yield break;
             if (mode == "talk") { yield return TalkTest(); yield break; }
+            if (mode == "ask") { yield return AskTest(); yield break; }
             while (!SceneObjects.OnDungeonFloor || PlayerSlots.Local == null ||
                 (NetSession.IsHost ? WorldSync.Instance.ReadyPeers < DevEnv.ExpectPlayers - 1 : !WorldSync.Instance.FloorReady)) yield return null;
             yield return Wait(5f);
@@ -302,6 +303,39 @@ namespace GungeonOnline.Dev
             }
             Check(asked, "a conversation with a question was answered");
             Plugin.Log.LogInfo($"TALK done sent={ConversationSync.AnswersSent} used={ConversationSync.AnswersUsed}");
+        }
+
+        /// <summary>A friend's question open on this PC (their NPC or shrine runs here too) must not block our own
+        /// question, and their answer must arrive from their PC.</summary>
+        IEnumerator AskTest()
+        {
+            while (!SceneObjects.InBreach || PlayerSlots.Local == null || !AnyRemote()) yield return null;
+            yield return Wait(6f);
+            var ui = GameUIRoot.Instance;
+            if (!NetSession.IsHost)
+            {
+                yield return Wait(4f);
+                Check(ui.DisplayPlayerConversationOptions(PlayerSlots.Local, new[] { "Yes", "No" }), "guest's question opens");
+                float end = Time.realtimeSinceStartup + 10f;
+                int idx = -1;
+                while (Time.realtimeSinceStartup < end && !ui.GetPlayerConversationResponse(out idx)) yield return null;
+                Check(idx >= 0 && Time.realtimeSinceStartup < end, "guest answered " + idx);
+                yield break;
+            }
+            PlayerController friend = null;
+            foreach (var kv in PlayerSlots.Remotes) if (kv.Value) { friend = kv.Value; break; }
+            ui.DisplayPlayerConversationOptions(friend, new[] { "Yes", "No" }); // the copy of the friend's question
+            yield return Wait(2f);
+            Check(ui.DisplayPlayerConversationOptions(PlayerSlots.Local, new[] { "A", "B" }), "host's own question opens while a friend's question is open");
+            float until = Time.realtimeSinceStartup + 10f;
+            int mine = -1;
+            while (Time.realtimeSinceStartup < until && !ui.GetPlayerConversationResponse(out mine)) yield return null;
+            Check(Time.realtimeSinceStartup < until, "host's own question answered (" + mine + ")");
+            yield return Wait(1f);
+            until = Time.realtimeSinceStartup + 15f;
+            int theirs = -1;
+            while (Time.realtimeSinceStartup < until && !ui.GetPlayerConversationResponse(out theirs)) yield return null;
+            Check(Time.realtimeSinceStartup < until && ConversationSync.AnswersUsed > 0, "friend's answer arrived from their PC (" + theirs + ")");
         }
 
         static bool AnyRemote()

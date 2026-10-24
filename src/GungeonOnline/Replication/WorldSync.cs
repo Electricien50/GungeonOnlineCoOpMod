@@ -232,20 +232,42 @@ namespace GungeonOnline.Replication
             return o != null && NetIds.Has(o) ? NetIds.Of(o) : NetIds.Of(t.gameObject);
         }
 
-        /// <summary>Host: the group object this enemy belongs to, when its catalogue entry spawns the whole group.</summary>
-        static GameObject GroupOf(AIActor a)
+        /// <summary>Host: the group object this enemy belongs to (a boss object that is not an enemy itself, such as
+        /// Kill Pillars), with the catalogue entry that spawns the whole group. Its statues have no id of their own.</summary>
+        static GameObject GroupOf(AIActor a, out string groupGuid)
         {
-            var entry = EnemyDatabase.GetOrLoadByGuid(a.EnemyGuid) as AIActorDummy;
-            if (entry == null || entry.realPrefab == null || entry.realPrefab.GetComponent<AIActor>() != null) return null;
+            groupGuid = null;
             for (var t = a.transform.parent; t != null; t = t.parent)
-                if (t.name.StartsWith(entry.realPrefab.name)) return t.gameObject;
+            {
+                if (t.GetComponent<AIActor>() != null) return null;
+                groupGuid = GroupGuid(t.name.Replace("(Clone)", "").Trim());
+                if (groupGuid != null) return t.gameObject;
+            }
             return null;
+        }
+
+        static readonly Dictionary<string, string> groupGuids = new Dictionary<string, string>();
+
+        /// <summary>The catalogue entry (a stand-in such as "BossStatuesDummy") whose real object is named this.</summary>
+        static string GroupGuid(string name)
+        {
+            if (groupGuids.TryGetValue(name, out var have)) return have;
+            string found = null;
+            foreach (var e in EnemyDatabase.Instance.Entries)
+            {
+                if (e == null || string.IsNullOrEmpty(e.path) || !e.name.StartsWith(name) || e.name == name) continue;
+                var d = EnemyDatabase.GetOrLoadByGuid(e.myGuid) as AIActorDummy;
+                if (d != null && d.realPrefab != null && d.realPrefab.name == name) { found = e.myGuid; break; }
+            }
+            groupGuids[name] = found;
+            return found;
         }
 
         byte[] GroupMessage(uint id, GameObject g, AIActor part)
         {
             var gw = new WireWriter(64);
-            gw.U8(EvSpawnGroup); gw.U32(id); gw.Str(part.EnemyGuid ?? "");
+            GroupOf(part, out var guid);
+            gw.U8(EvSpawnGroup); gw.U32(id); gw.Str(guid ?? "");
             Vector3 p = g.transform.position;
             gw.F32(p.x); gw.F32(p.y); gw.F32(p.z);
             gw.I16((short)RoomIndex(part.ParentRoom));
@@ -282,12 +304,13 @@ namespace GungeonOnline.Replication
             foreach (var a in StaticReferenceManager.AllEnemies)
             {
                 // Companions come from their player's items and exist for every copy of that player on every machine.
-                if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid) || a.CompanionOwner != null) continue;
+                if (!Replicated(a) || NetIds.Has(a) || a.CompanionOwner != null) continue;
                 var owner = OwnerOf(a);
+                if (string.IsNullOrEmpty(a.EnemyGuid) && (owner != null || !GroupOf(a, out _))) continue;
                 if (owner != null && Replicated(owner) && !string.IsNullOrEmpty(owner.EnemyGuid) && !NetIds.Has(owner)) continue; // owner first
                 if (owner == null)
                 {
-                    var group = GroupOf(a);
+                    var group = GroupOf(a, out _);
                     if (group != null && !NetIds.Has(group))
                     {
                         uint gid = NetIds.Assign(group);
@@ -572,6 +595,9 @@ namespace GungeonOnline.Replication
                 if (a.CompanionOwner != null) continue; // owned companions are per machine; unowned critters replicate
                 if (IsTemplate(a)) continue;
                 RememberModEnemy(a);
+                // Our own copy of a grouped boss (Kill Pillars): the host sends its group; drop ours whole.
+                var ownGroup = GroupOf(a, out _);
+                if (ownGroup != null) Destroy(ownGroup);
                 erasing = true;
                 // One enemy's own death code failing (a boss door mimic did) must not stop the rest: this floor
                 // would never be reported ready, and the host would send it again.
