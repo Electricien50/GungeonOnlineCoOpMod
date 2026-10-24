@@ -2,6 +2,7 @@
 
 ## 1.1.6
 
+- Kill Pillars and other bosses made of several parts show up for a friend who finishes loading a floor after the host. Before, their parts could be missing until the game noticed and sent the whole floor again.
 - Floors with wall mimics: a guest's copy of a wall mimic no longer fails to appear (it used to error and be sent again every few seconds).
 - A floor always finishes loading even when one player's arrival on it fails (for example a friend who drops or reconnects during the load). Before, that stopped the load for everyone on that PC and left them stuck on a frozen screen.
 

@@ -686,7 +686,12 @@ namespace GungeonOnline.Replication
                 if (data[0] == EvFloorReady)
                 {
                     ready.Add(c);
-                    // Send the whole current world to the newcomer.
+                    // Send the whole current world to the newcomer. Groups first (Kill Pillars' statues): their
+                    // parts are named by their place inside the group and are lost if the group is not there yet.
+                    foreach (var kv in NetIds.All)
+                        if (kv.Value is GameObject g && g)
+                            foreach (var part in g.GetComponentsInChildren<AIActor>(true))
+                                if (part && NetIds.Has(part)) { c.Send((byte)Channel.Event, GroupMessage(kv.Key, g, part), Delivery.ReliableOrdered); break; }
                     foreach (var kv in NetIds.All)
                         if (kv.Value is AIActor a && a && !a.healthHaver.IsDead)
                             c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
