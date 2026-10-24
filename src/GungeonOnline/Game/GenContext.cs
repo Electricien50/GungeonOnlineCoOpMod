@@ -54,6 +54,8 @@ namespace GungeonOnline.Game
             h.Patch(AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(LoopDungeonGenerator), nameof(LoopDungeonGenerator.GenerateDungeonLayoutDeferred))), prefix: build, finalizer: leave);
             h.Patch(AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(Dungeon), nameof(Dungeon.Regenerate))), prefix: build, finalizer: leave);
             h.Patch(AccessTools.Method(typeof(GameLevelDefinition), nameof(GameLevelDefinition.LovinglySelectDungeonFlow)), prefix: build, finalizer: leave);
+            // The floor's flow is picked when the generator is made (the Forge's depends on a story flag).
+            foreach (var ctor in typeof(LoopDungeonGenerator).GetConstructors()) h.Patch(ctor, prefix: build, finalizer: leave);
             // The one save write made while a floor loads: this run's stats, which stay ours.
             h.Patch(AccessTools.Method(typeof(GameStatsManager), nameof(GameStatsManager.MoveSessionStatsToSavedSessionStats)), prefix: new HarmonyMethod(t, nameof(OwnSessionPrefix)));
             // Setting the run seed plans the run's special rooms on the spot, from the save.
