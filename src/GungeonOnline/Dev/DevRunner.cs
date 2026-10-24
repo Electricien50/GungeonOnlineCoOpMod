@@ -228,7 +228,7 @@ namespace GungeonOnline.Dev
 
         // GO_BOSS_KILL_AT=seconds (host): the boss dies then, as if shot down, so boss reward tests do not depend on the bot.
         bool bossKilled;
-        float bossLogAt;
+        float bossLogAt, bossRetryAt;
         void BossKill()
         {
             if (bossKilled || !Session.NetSession.IsHost) return;
@@ -243,13 +243,21 @@ namespace GungeonOnline.Dev
                 Plugin.Log.LogInfo($"Harness: boss kill check room={(room != null ? room.GetRoomName() : "-")} cat={(room != null && room.area != null ? room.area.PrototypeRoomCategory.ToString() : "-")} enemies={n} inRoom={inRoom}");
             }
             if (room == null || room.area == null || room.area.PrototypeRoomCategory != PrototypeDungeonRoom.RoomCategory.BOSS) return;
+            if (Time.realtimeSinceStartup < bossRetryAt) return;
+            // Players cannot hurt a boss during its intro; killing it then starts the kill cam over the intro and both stall.
+            if (GameManager.IsBossIntro) return;
+            bossRetryAt = Time.realtimeSinceStartup + 2f;
+            // Retried until every enemy in the room is dead: a boss can still be untouchable (intro, walk-in) the first time.
+            bool any = false;
             foreach (var e in new System.Collections.Generic.List<AIActor>(StaticReferenceManager.AllEnemies))
                 if (e && e.healthHaver && !e.healthHaver.IsDead && e.ParentRoom == room && e.CompanionOwner == null)
                 {
-                    bossKilled = true;
-                    Plugin.Log.LogInfo($"Harness: killing {e.name} (boss={e.healthHaver.IsBoss})");
+                    any = true;
+                    if (e.healthHaver.IsBoss && !e.HasBeenEngaged) continue;
+                    Plugin.Log.LogInfo($"Harness: killing {e.name} (boss={e.healthHaver.IsBoss} vulnerable={e.healthHaver.IsVulnerable} preventAll={e.healthHaver.PreventAllDamage} engaged={e.HasBeenEngaged} introRunning={GameManager.IsBossIntro})");
                     e.healthHaver.ApplyDamage(1e6f, Vector2.zero, "harness", CoreDamageTypes.None, DamageCategory.Unstoppable, true);
                 }
+            if (!any) bossKilled = true;
         }
 
         // GO_DEATH_BUTTON=menu|quick (host): 8 s after the death screen shows, press its Main menu or Quick restart.
