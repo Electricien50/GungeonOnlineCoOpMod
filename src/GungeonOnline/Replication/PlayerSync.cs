@@ -136,7 +136,10 @@ namespace GungeonOnline.Replication
                 // Both falling: the fall plays out here as it does there. A copy that rides a cart here is carried by it; one
                 // that missed the cart, or has not reached the pit its owner fell into, follows its owner.
                 bool ownerFree = (s.PlaceState & InputSync.StateFalling) == 0 || !p.IsFalling;
-                if (current && ownerFree && p.specRigidbody != null && !p.currentMineCart && !GameManager.Instance.IsLoadingLevel)
+                // Host: a player still on an older copy of the floor (we restarted and resumed the run, or changed floors)
+                // reports positions from that floor. Placed on ours they can land in a boss room and start its intro.
+                bool sameFloor = !NetSession.IsHost || Game.SceneObjects.InBreach || WorldSync.Instance == null || WorldSync.Instance.IsSlotReady(slot);
+                if (current && ownerFree && sameFloor && p.specRigidbody != null && !p.currentMineCart && !GameManager.Instance.IsLoadingLevel)
                 {
                     Vector2 at = p.transform.position;
                     var to = s.PlacePos + s.PlaceAhead; // where the owner is now, when the frame landed late

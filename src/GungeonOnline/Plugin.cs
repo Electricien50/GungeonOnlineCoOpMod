@@ -30,6 +30,7 @@ namespace GungeonOnline
             Game.PartnerUI.Install(harmony);
             Game.RunSync.Install(harmony);
             TryInstall("GenContext", () => Game.GenContext.Install(harmony));
+            TryInstall("PlayerPhysicsGuard", () => Game.PlayerPhysicsGuard.Install(harmony));
             Game.PauseScope.Install(harmony);
             Game.PresentationGate.Install(harmony);
             TryInstall("ConversationSync", () => Game.ConversationSync.Install(harmony));
