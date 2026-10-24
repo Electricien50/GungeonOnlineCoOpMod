@@ -100,7 +100,9 @@ namespace GungeonOnline.Dev
                 if (mode == "boss-revive")
                 {
                     Kill(PlayerSlots.Local);
-                    yield return Wait(80f);
+                    // Revived as soon as the boss dies and its pedestal appears; checked while the session is still up.
+                    float until = Time.realtimeSinceStartup + 70f;
+                    while (Time.realtimeSinceStartup < until && (PlayerSlots.Local.IsGhost || PlayerSlots.Local.healthHaver.IsDead)) yield return null;
                     Check(!PlayerSlots.Local.IsGhost && !PlayerSlots.Local.healthHaver.IsDead, "boss pedestal revives guest");
                     yield break;
                 }
