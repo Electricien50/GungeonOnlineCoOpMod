@@ -189,6 +189,8 @@ namespace GungeonOnline.Game
                     w.Bool(resetOptions.BossRush); w.I32(resetOptions.NumMetas);
                 }
                 Replication.WorldSync.Instance?.OnFloorUnloading();
+                // Ahead of the load order on the same ordered channel: the save state this floor is built from.
+                GenContext.CaptureAndSend(gm.CurrentRunSeed, index);
                 NetSession.Instance.Node.Broadcast((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
                 NetSession.Instance.FlushNow();
                 Plugin.Log.LogInfo($"RunSync: host loading level index {GM.Field("nextLevelIndex").GetValue<int>()}");
@@ -230,6 +232,7 @@ namespace GungeonOnline.Game
             w.Str(gm.InjectedLevelName ?? "");
             var lobby = FindObjectOfType<Lobby>();
             w.Str(lobby != null && lobby.Roster.TryGetValue(c.Slot, out var e) ? e.Prefab : "");
+            GenContext.SendTo(c);
             c.Send((byte)Channel.Control, w.ToArray(), Delivery.ReliableOrdered);
             Plugin.Log.LogInfo($"RunSync: sent rejoin (floor index {CurrentIndex}) to slot {c.Slot}");
         }
@@ -240,6 +243,7 @@ namespace GungeonOnline.Game
             byte type = r.U8();
             if (type == MsgMods) { CompareMods(c, r.Str()); return; }
             if (NetSession.IsHost) return;
+            if (type == GenContext.Msg) { GenContext.Receive(ref r); return; }
             if (type == MsgLoadLevel || type == MsgRejoin) Session.Lobby.HostInBreach = 0; // the host is in a run now
             if (type == MsgClone)
             {

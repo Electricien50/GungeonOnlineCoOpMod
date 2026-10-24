@@ -18,7 +18,7 @@ namespace GungeonOnline.Replication
     {
         public static WorldSync Instance { get; private set; }
 
-        const byte EvFloorReady = 1, EvSpawn = 2, EvDespawn = 3, EvDeath = 4, EvDamage = 5, EvRoomSeal = 6, EvJammed = 7, EvReaper = 8;
+        const byte EvFloorReady = 1, EvSpawn = 2, EvDespawn = 3, EvDeath = 4, EvDamage = 5, EvRoomSeal = 6, EvJammed = 7, EvReaper = 8, EvSpawnPart = 9, EvSpawnGroup = 10;
 
         /// <summary>True while applying a host event on the client (lets the blocked game paths run).</summary>
         public static bool ApplyingHost;
@@ -29,7 +29,7 @@ namespace GungeonOnline.Replication
         // Host state
         readonly HashSet<Connection> ready = new HashSet<Connection>();
         readonly HashSet<uint> deathSent = new HashSet<uint>();
-        sealed class Sent { public Vector2 Pos; public int Clip; public bool Flip; public byte Hp; public float At; }
+        sealed class Sent { public Vector2 Pos; public int Clip; public byte Flags, Angle; public byte Hp; public float At; }
         readonly Dictionary<uint, Sent> lastSent = new Dictionary<uint, Sent>();
         float nextSnapshot;
         uint snapSeq;
@@ -44,6 +44,9 @@ namespace GungeonOnline.Replication
             public float TargetTime, MovedFor = -1f; // MovedFor: the snapshot the last move used
             public int Clip;
             public bool Jammed;
+            // Host state that the enemy's own AI would show here: gun aim and the sniper's laser line.
+            public bool HasGun, Laser;
+            public float GunAngle;
         }
         readonly Dictionary<uint, Replica> replicas = new Dictionary<uint, Replica>();
         uint lastSnapSeq;
@@ -127,6 +130,8 @@ namespace GungeonOnline.Replication
             if (__instance.GetComponent<PlayerController>() != null || __instance.CompanionOwner != null) return true;
             if (NetIds.Has(__instance)) return true;
             if (IsTemplate(__instance)) return true;
+            // Part of a host enemy's copy (a boss's statues): it comes with that copy and the host names it.
+            if (NamedAncestor(__instance) != null) { MakeReplica(__instance); return true; }
             RememberModEnemy(__instance);
             Instance.LocalActorsSuppressed++;
             __instance.EraseFromExistence(true);
@@ -201,8 +206,66 @@ namespace GungeonOnline.Replication
 
         static bool Replicated(AIActor a) => a != null && !(a is null) && a.gameObject.activeInHierarchy && a.GetComponent<PlayerController>() == null && !IsTemplate(a);
 
+        /// <summary>The enemy this one is a part of (Kill Pillars' statues are enemies inside the boss), or null.</summary>
+        static AIActor OwnerOf(AIActor a)
+        {
+            var t = a.transform.parent;
+            return t != null ? t.GetComponentInParent<AIActor>() : null;
+        }
+
+        /// <summary>The nearest object above this enemy that has a network id: an owner enemy, or a group such as
+        /// Kill Pillars (a boss object that is not an enemy itself, holding four statue enemies).</summary>
+        static Transform NamedAncestor(AIActor a)
+        {
+            for (var t = a.transform.parent; t != null; t = t.parent)
+            {
+                var o = t.GetComponent<AIActor>();
+                if (o != null && NetIds.Has(o)) return t;
+                if (NetIds.Has(t.gameObject)) return t;
+            }
+            return null;
+        }
+
+        static uint IdOf(Transform t)
+        {
+            var o = t.GetComponent<AIActor>();
+            return o != null && NetIds.Has(o) ? NetIds.Of(o) : NetIds.Of(t.gameObject);
+        }
+
+        /// <summary>Host: the group object this enemy belongs to, when its catalogue entry spawns the whole group.</summary>
+        static GameObject GroupOf(AIActor a)
+        {
+            var entry = EnemyDatabase.GetOrLoadByGuid(a.EnemyGuid) as AIActorDummy;
+            if (entry == null || entry.realPrefab == null || entry.realPrefab.GetComponent<AIActor>() != null) return null;
+            for (var t = a.transform.parent; t != null; t = t.parent)
+                if (t.name.StartsWith(entry.realPrefab.name)) return t.gameObject;
+            return null;
+        }
+
+        byte[] GroupMessage(uint id, GameObject g, AIActor part)
+        {
+            var gw = new WireWriter(64);
+            gw.U8(EvSpawnGroup); gw.U32(id); gw.Str(part.EnemyGuid ?? "");
+            Vector3 p = g.transform.position;
+            gw.F32(p.x); gw.F32(p.y); gw.F32(p.z);
+            gw.I16((short)RoomIndex(part.ParentRoom));
+            return gw.ToArray();
+        }
+
         byte[] SpawnMessage(uint id, AIActor a)
         {
+            var ownerT = NamedAncestor(a);
+            uint ownerId = ownerT != null ? IdOf(ownerT) : 0;
+            if (ownerId != 0)
+            {
+                // A part comes with its owner's copy: name it by its place inside the owner.
+                var path = new List<byte>();
+                for (var t = a.transform; t != null && t != ownerT; t = t.parent) path.Insert(0, (byte)t.GetSiblingIndex());
+                var pw = new WireWriter(64);
+                pw.U8(EvSpawnPart); pw.U32(id); pw.U32(ownerId); pw.Str(a.EnemyGuid ?? "");
+                pw.U8((byte)path.Count); foreach (var b in path) pw.U8(b);
+                return pw.ToArray();
+            }
             var ww = new WireWriter(96);
             ww.U8(EvSpawn); ww.U32(id); ww.Str(a.EnemyGuid ?? "");
             Vector2 p = a.transform.position;
@@ -220,6 +283,19 @@ namespace GungeonOnline.Replication
             {
                 // Companions come from their player's items and exist for every copy of that player on every machine.
                 if (!Replicated(a) || NetIds.Has(a) || string.IsNullOrEmpty(a.EnemyGuid) || a.CompanionOwner != null) continue;
+                var owner = OwnerOf(a);
+                if (owner != null && Replicated(owner) && !string.IsNullOrEmpty(owner.EnemyGuid) && !NetIds.Has(owner)) continue; // owner first
+                if (owner == null)
+                {
+                    var group = GroupOf(a);
+                    if (group != null && !NetIds.Has(group))
+                    {
+                        uint gid = NetIds.Assign(group);
+                        var gmsg = GroupMessage(gid, group, a);
+                        foreach (var c in ready) c.Send((byte)Channel.Event, gmsg, Delivery.ReliableOrdered);
+                        if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNGROUP {gid} {group.name}");
+                    }
+                }
                 uint id = NetIds.Assign(a);
                 var msg = SpawnMessage(id, a);
                 if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNSEND {id} {a.EnemyGuid} ready={ready.Count} t={Time.realtimeSinceStartup:F2}");
@@ -331,15 +407,15 @@ namespace GungeonOnline.Replication
                 if (a == null || a.healthHaver == null || a.healthHaver.IsDead) continue;
                 Vector2 pos = a.transform.position;
                 int clip = a.spriteAnimator != null && a.spriteAnimator.CurrentClip != null ? ClipHash(a.spriteAnimator.CurrentClip.name) : 0;
-                bool flip = a.sprite != null && a.sprite.FlipX;
+                byte flags = StateFlags(a, out byte angle);
                 byte hp = (byte)Mathf.Clamp(Mathf.RoundToInt(a.healthHaver.GetCurrentHealthPercentage() * 255f), 0, 255);
                 if (!lastSent.TryGetValue(kv.Key, out var s)) lastSent[kv.Key] = s = new Sent { At = -10 };
-                bool changed = (pos - s.Pos).sqrMagnitude > 1e-4f || clip != s.Clip || flip != s.Flip || hp != s.Hp;
+                bool changed = (pos - s.Pos).sqrMagnitude > 1e-4f || clip != s.Clip || flags != s.Flags || angle != s.Angle || hp != s.Hp;
                 if (!changed && now - s.At < 0.5f) continue; // idle actors refresh twice a second
-                s.Pos = pos; s.Clip = clip; s.Flip = flip; s.Hp = hp; s.At = now;
+                s.Pos = pos; s.Clip = clip; s.Flags = flags; s.Angle = angle; s.Hp = hp; s.At = now;
                 batch.Add(new KeyValuePair<uint, AIActor>(kv.Key, a));
             }
-            const int perPacket = 55; // 19 bytes each, stays under one datagram
+            const int perPacket = 48; // 20 to 21 bytes each, stays under one datagram
             for (int start = 0; start < batch.Count; start += perPacket)
             {
                 int n = Mathf.Min(perPacket, batch.Count - start);
@@ -356,12 +432,80 @@ namespace GungeonOnline.Replication
                     w.I16((short)Mathf.Clamp(Mathf.RoundToInt(v.x * 64f), short.MinValue, short.MaxValue));
                     w.I16((short)Mathf.Clamp(Mathf.RoundToInt(v.y * 64f), short.MinValue, short.MaxValue));
                     w.U16((ushort)s.Clip);
-                    w.U8((byte)((s.Flip ? 1 : 0)));
+                    w.U8(s.Flags);
                     w.U8(s.Hp);
+                    if ((s.Flags & FlagGun) != 0) w.U8(s.Angle);
                 }
                 var msg = w.ToArray();
                 foreach (var c in ready) c.Send((byte)Channel.World, msg, Delivery.Unreliable);
             }
+        }
+
+        const byte FlagFlip = 1, FlagEngaged = 2, FlagHidden = 4, FlagGun = 8, FlagLaser = 16, FlagGreen = 32;
+
+        /// <summary>Host: what the enemy's own AI decides to show, which its copies (AI off) cannot work out.
+        /// Enemies that appear mid-fight (split slimes, ghosts, summons) stay hidden until engaged; snipers show a
+        /// laser line before they fire.</summary>
+        static byte StateFlags(AIActor a, out byte angle)
+        {
+            angle = 0;
+            byte f = 0;
+            if (a.sprite != null && a.sprite.FlipX) f |= FlagFlip;
+            if (a.HasBeenEngaged) f |= FlagEngaged;
+            if (a.sprite != null && a.sprite.renderer != null && !a.sprite.renderer.enabled) f |= FlagHidden;
+            var gun = a.aiShooter != null ? a.aiShooter.CurrentGun : null;
+            if (gun != null)
+            {
+                f |= FlagGun;
+                angle = (byte)(Mathf.RoundToInt(Mathf.Repeat(a.aiShooter.GunAngle, 360f) / 360f * 256f) & 0xFF);
+                var laser = gun.LaserSight;
+                if (laser != null && laser.renderer != null && laser.renderer.enabled)
+                {
+                    f |= FlagLaser;
+                    if (gun.LaserSightIsGreen) f |= FlagGreen;
+                }
+            }
+            return f;
+        }
+
+        /// <summary>Client: show a copy the way the host's enemy is shown.</summary>
+        static readonly bool flagsOff = Dev.DevEnv.IsHarness && System.Environment.GetEnvironmentVariable("GO_REPLICA_FLAGS") == "off"; // tests: the old behaviour
+
+        static void ApplyFlags(Replica rep, byte flags, byte angle)
+        {
+            var a = rep.Actor;
+            if (a.sprite != null) a.sprite.FlipX = (flags & FlagFlip) != 0;
+            if (flagsOff) return;
+            try
+            {
+                // Engaging runs the enemy's appear step (invisible-until-awake enemies switch their sprites on).
+                // A boss engages here only for someone in its room: engaging also shows its health bar.
+                if ((flags & FlagEngaged) != 0 && !a.HasBeenEngaged &&
+                    (a.healthHaver == null || !a.healthHaver.IsBoss || (Game.PlayerSlots.Local && Game.PlayerSlots.Local.CurrentRoom == a.ParentRoom)))
+                    a.HasBeenEngaged = true;
+                bool hidden = (flags & FlagHidden) != 0;
+                if (a.sprite != null && a.sprite.renderer != null && a.sprite.renderer.enabled == hidden) a.ToggleRenderers(!hidden);
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning($"WorldSync: could not show {a.name}: {e.Message}"); }
+            rep.HasGun = (flags & FlagGun) != 0;
+            rep.Laser = (flags & FlagLaser) != 0;
+            rep.GunAngle = angle * (360f / 256f);
+            if (rep.Laser && a.aiShooter != null && a.aiShooter.CurrentGun != null && !a.aiShooter.CurrentGun.ForceLaserSight)
+            {
+                a.aiShooter.CurrentGun.LaserSightIsGreen = (flags & FlagGreen) != 0;
+                a.aiShooter.CurrentGun.ForceLaserSight = true;
+            }
+        }
+
+        /// <summary>Client: point a copy's gun where the host's points, and draw the laser line while the host's is lit.</summary>
+        static void AimReplica(Replica rep)
+        {
+            var a = rep.Actor;
+            var sh = a.aiShooter;
+            if (!rep.HasGun || sh == null || sh.CurrentGun == null) return;
+            var gun = sh.CurrentGun;
+            if (gun.LaserSight != null && gun.LaserSight.renderer != null) gun.LaserSight.renderer.enabled = rep.Laser;
+            sh.AimAtPoint(a.CenterPosition + BraveMathCollege.DegreesToVector(rep.GunAngle, 6f));
         }
 
         static int ClipHash(string name)
@@ -374,6 +518,10 @@ namespace GungeonOnline.Replication
         /// <summary>Host: send every live actor and sealed room again (repair after a detected desync).</summary>
         public void ResendWorld(Connection c)
         {
+            foreach (var kv in NetIds.All)
+                if (kv.Value is GameObject g && g)
+                    foreach (var part in g.GetComponentsInChildren<AIActor>())
+                        if (part && NetIds.Has(part)) { c.Send((byte)Channel.Event, GroupMessage(kv.Key, g, part), Delivery.ReliableOrdered); break; }
             foreach (var kv in NetIds.All)
                 if (kv.Value is AIActor a && a && a.healthHaver && !a.healthHaver.IsDead)
                     c.Send((byte)Channel.Event, SpawnMessage(kv.Key, a), Delivery.ReliableOrdered);
@@ -540,10 +688,13 @@ namespace GungeonOnline.Replication
                 switch (type)
                 {
                     case EvSpawn: ApplySpawn(ref r); break;
+                    case EvSpawnPart: ApplySpawnPart(ref r); break;
+                    case EvSpawnGroup: ApplySpawnGroup(ref r); break;
                     case EvDespawn:
                         {
                             uint id = r.U32();
                             if (replicas.TryGetValue(id, out var rep) && rep.Actor) rep.Actor.EraseFromExistence(true);
+                            else { var gone = NetIds.Get<GameObject>(id); if (gone) Destroy(gone); }
                             replicas.Remove(id); NetIds.Forget(id);
                             break;
                         }
@@ -623,6 +774,53 @@ namespace GungeonOnline.Replication
             SpawnsApplied++;
             if (Dev.DevEnv.IsHarness && modEnemyPrefabs.ContainsKey(guid))
                 Plugin.Log.LogInfo($"MODREPLICA {guid} active={a.gameObject.activeInHierarchy} drawn={(a.sprite && a.sprite.renderer && a.sprite.renderer.enabled)}");
+        }
+
+        void ApplySpawnPart(ref WireReader r)
+        {
+            uint id = r.U32(), ownerId = r.U32();
+            string guid = r.Str();
+            int n = r.U8();
+            Transform t = null;
+            if (replicas.TryGetValue(ownerId, out var o) && o.Actor) t = o.Actor.transform;
+            else { var g = NetIds.Get<GameObject>(ownerId); if (g) t = g.transform; }
+            for (int i = 0; i < n; i++)
+            {
+                int k = r.U8();
+                t = t != null && k < t.childCount ? t.GetChild(k) : null;
+            }
+            if (replicas.ContainsKey(id)) return;
+            var a = t != null ? t.GetComponent<AIActor>() : null;
+            if (a == null || a.EnemyGuid != guid)
+            {
+                SpawnFailures++;
+                Plugin.Log.LogWarning($"WorldSync: part {id} ({guid}) of {ownerId} not found");
+                return;
+            }
+            MakeReplica(a);
+            NetIds.Bind(id, a);
+            replicas[id] = new Replica { Actor = a, Target = a.transform.position, TargetTime = Time.realtimeSinceStartup };
+            SpawnsApplied++;
+            if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNPART {id} {a.name} of {ownerId}");
+        }
+
+        void ApplySpawnGroup(ref WireReader r)
+        {
+            uint id = r.U32();
+            string guid = r.Str();
+            var pos = new Vector3(r.F32(), r.F32(), r.F32());
+            var room = RoomAt(r.I16()) ?? ((Vector2)pos).GetAbsoluteRoom();
+            if (NetIds.Get<GameObject>(id)) return;
+            var entry = EnemyDatabase.GetOrLoadByGuid(guid) as AIActorDummy;
+            if (entry == null || entry.realPrefab == null || room == null) { SpawnFailures++; Plugin.Log.LogWarning("WorldSync: group " + guid + " unknown"); return; }
+            var cell = ((Vector2)pos).ToIntVector2(VectorConversions.Floor) - room.area.basePosition;
+            var go = DungeonPlaceableUtility.InstantiateDungeonPlaceable(entry.gameObject, room, cell, false);
+            if (go == null) { SpawnFailures++; Plugin.Log.LogWarning("WorldSync: group " + guid + " failed"); return; }
+            go.transform.position = pos;
+            NetIds.Bind(id, go);
+            // Its enemies start next frame and stay (their group has a network id); the host names each one.
+            foreach (var part in go.GetComponentsInChildren<AIActor>(true)) MakeReplica(part);
+            if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNGROUP {id} {go.name} applied");
         }
 
         static readonly Dictionary<string, AIActor> modEnemyPrefabs = new Dictionary<string, AIActor>();
@@ -718,6 +916,7 @@ namespace GungeonOnline.Replication
                 int clip = r.U16();
                 byte flags = r.U8();
                 byte hp = r.U8();
+                byte angle = (flags & FlagGun) != 0 ? r.U8() : (byte)0;
                 if (stale || !replicas.TryGetValue(id, out var rep) || !rep.Actor) continue;
                 rep.OldTarget = rep.Target; rep.OldVelocity = rep.Velocity; rep.OldTime = rep.TargetTime;
                 rep.Target = pos; rep.Velocity = vel; rep.TargetTime = now;
@@ -728,7 +927,7 @@ namespace GungeonOnline.Replication
                         if (cl != null && cl.name != null && ClipHash(cl.name) == clip) { a.spriteAnimator.Play(cl); break; }
                     rep.Clip = clip;
                 }
-                if (a.sprite != null) a.sprite.FlipX = (flags & 1) != 0;
+                ApplyFlags(rep, flags, angle);
                 if (a.healthHaver != null && !a.healthHaver.IsDead)
                     a.healthHaver.ForceSetCurrentHealth(Mathf.Max(0.01f, a.healthHaver.GetMaxHealth() * hp / 255f));
             }
@@ -744,6 +943,7 @@ namespace GungeonOnline.Replication
                 var a = rep.Actor;
                 if (!a || a.healthHaver == null || a.healthHaver.IsDead) continue;
                 if (a.IsBlackPhantom != rep.Jammed) SetJammed(a, rep.Jammed);
+                try { AimReplica(rep); } catch (System.Exception) { rep.HasGun = false; }
                 float age = Mathf.Min(0.1f, now - rep.TargetTime); // extrapolate at most 100 ms
                 Vector2 want = rep.Target + rep.Velocity * age;
                 Vector2 cur = a.transform.position;

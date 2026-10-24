@@ -39,6 +39,7 @@ namespace GungeonOnline.Dev
         {
             string mode = Environment.GetEnvironmentVariable("GO_REGRESSION");
             if (!DevEnv.IsHarness || string.IsNullOrEmpty(mode)) yield break;
+            if (mode == "talk") { yield return TalkTest(); yield break; }
             while (!SceneObjects.OnDungeonFloor || PlayerSlots.Local == null ||
                 (NetSession.IsHost ? WorldSync.Instance.ReadyPeers < DevEnv.ExpectPlayers - 1 : !WorldSync.Instance.FloorReady)) yield return null;
             yield return Wait(5f);
@@ -46,6 +47,7 @@ namespace GungeonOnline.Dev
             foreach (var p in Game.NPlayers.Players.All) p.healthHaver.IsVulnerable = false;
             if (mode == "rainbow")
                 foreach (var item in PickupObjectDatabase.Instance.Objects) if (item) item.IgnoredByRat = true;
+            if (mode == "enemyvis") { yield return EnemyVisibility(); yield break; }
             if (mode == "shop")
             {
                 if (NetSession.IsHost) yield break;
@@ -257,6 +259,132 @@ namespace GungeonOnline.Dev
                 AccessTools.Method(typeof(DungeonDoorController), "CheckForPlayerCollision").Invoke(door, new object[] { late.specRigidbody, Vector2.up });
                 yield return Wait(2f);
                 Check(late.CurrentRoom == fight && fight.IsSealed, "late teammate enters while fight stays sealed");
+            }
+        }
+
+        /// <summary>The guest talks to a Breach NPC that asks a question, then the host talks to another one.
+        /// The host's own conversation must still end (a friend's conversation used to block it).</summary>
+        IEnumerator TalkTest()
+        {
+            while (!SceneObjects.InBreach || PlayerSlots.Local == null || !PlayerSlots.Local.healthHaver || !AnyRemote()) yield return null;
+            yield return Wait(8f);
+            var npcs = new List<TalkDoerLite>();
+            foreach (var td in UnityEngine.Object.FindObjectsOfType<TalkDoerLite>())
+            {
+                if (!td || !td.gameObject.activeInHierarchy) continue;
+                int asks = 0;
+                foreach (var fsm in td.GetComponents<PlayMakerFSM>())
+                    foreach (var st in fsm.FsmStates)
+                        foreach (var act in st.Actions)
+                            if (act is HutongGames.PlayMaker.Actions.DialogueBox db && db.responses != null && db.responses.Length > 0) asks++;
+                Plugin.Log.LogInfo($"TALK npc {td.name} at {td.transform.position} questions={asks}");
+                if (asks > 0) npcs.Add(td);
+            }
+            npcs.Sort((x, y) => string.CompareOrdinal(x.name, y.name));
+            if (NetSession.IsHost) npcs.Reverse();
+            Check(npcs.Count >= 2, "two Breach NPCs that ask questions");
+            if (NetSession.IsHost) yield return Wait(70f); // the guest goes first
+            var me = PlayerSlots.Local;
+            int sentBefore = ConversationSync.AnswersSent;
+            bool asked = false;
+            foreach (var npc in npcs)
+            {
+                me.WarpToPoint((Vector2)npc.transform.position + new Vector2(0f, -1.5f));
+                yield return Wait(0.5f);
+                Plugin.Log.LogInfo("TALK " + (NetSession.IsHost ? "host" : "guest") + " talks to " + npc.name);
+                npc.Interact(me);
+                yield return Wait(1f);
+                float end = Time.realtimeSinceStartup + 25f;
+                while (Time.realtimeSinceStartup < end && (me.IsInputOverridden || npc.State == TalkDoerLite.TalkingState.Conversation)) yield return null;
+                Check(!me.IsInputOverridden, "conversation with " + npc.name + " ended and the player can move");
+                if (ConversationSync.AnswersSent > sentBefore || ConversationSync.LocalAnswered) { asked = true; break; }
+                yield return Wait(1.5f);
+            }
+            Check(asked, "a conversation with a question was answered");
+            Plugin.Log.LogInfo($"TALK done sent={ConversationSync.AnswersSent} used={ConversationSync.AnswersUsed}");
+        }
+
+        static bool AnyRemote()
+        {
+            foreach (var kv in PlayerSlots.Remotes) if (kv.Value) return true;
+            return false;
+        }
+
+        /// <summary>Enemies whose own AI decides what is shown: split slimes, ghosts, sniper lasers, Kill Pillars.
+        /// The host spawns them next to the players; both sides log what each enemy shows, for comparison.</summary>
+        IEnumerator EnemyVisibility()
+        {
+            var spawned = new List<AIActor>();
+            if (NetSession.IsHost)
+            {
+                var names = new List<string>();
+                foreach (var e in EnemyDatabase.Instance.Entries)
+                {
+                    if (e == null || string.IsNullOrEmpty(e.path)) continue;
+                    string n = e.name.ToLowerInvariant();
+                    if (n.Contains("blob") || n.Contains("hollowpoint") || n.Contains("sniper") || n.Contains("statue") || n.Contains("ghost") || n.Contains("spectre"))
+                        names.Add(e.name + "=" + e.myGuid);
+                }
+                Plugin.Log.LogInfo("ENEMYVIS candidates " + string.Join(", ", names.ToArray()));
+                var all = new List<string>();
+                foreach (var e in EnemyDatabase.Instance.Entries) if (e != null && !string.IsNullOrEmpty(e.path)) all.Add(e.name);
+                Plugin.Log.LogInfo("ENEMYVIS all " + string.Join(",", all.ToArray()));
+                var want = (Environment.GetEnvironmentVariable("GO_VIS_ENEMIES") ?? "blobulon,ghost,spectre,bulletrifleman,bossstatuesdummy").Split(',');
+                var room = PlayerSlots.Local.CurrentRoom;
+                Vector2 at = PlayerSlots.Local.CenterPosition;
+                int k = 0;
+                foreach (var w in want)
+                {
+                    AIActor prefab = null;
+                    foreach (var e in EnemyDatabase.Instance.Entries)
+                        if (e != null && !string.IsNullOrEmpty(e.path) && e.name.ToLowerInvariant() == w) { prefab = EnemyDatabase.GetOrLoadByGuid(e.myGuid); break; }
+                    if (prefab == null) { Plugin.Log.LogWarning("ENEMYVIS no enemy named " + w); continue; }
+                    var spot = at + new Vector2(-6f + 4f * k++, 4f);
+                    if (prefab is AIActorDummy dummy && dummy.realPrefab && dummy.realPrefab.GetComponent<AIActor>() == null)
+                    {
+                        // A group such as Kill Pillars: placed the way the game places it, not spawned as one enemy.
+                        var go = DungeonPlaceableUtility.InstantiateDungeonPlaceable(prefab.gameObject, room, spot.ToIntVector2(VectorConversions.Floor) - room.area.basePosition, false, AIActor.AwakenAnimationType.Default, true);
+                        foreach (var part in go.GetComponentsInChildren<AIActor>(true)) { spawned.Add(part); part.HasBeenEngaged = true; }
+                        Plugin.Log.LogInfo("ENEMYVIS placed group " + w + " " + go.name + " parts=" + go.GetComponentsInChildren<AIActor>(true).Length);
+                        continue;
+                    }
+                    var a = AIActor.Spawn(prefab, spot, room, true, AIActor.AwakenAnimationType.Spawn, true);
+                    if (a) { spawned.Add(a); Plugin.Log.LogInfo("ENEMYVIS spawned " + w + " " + a.EnemyGuid); }
+                    else Plugin.Log.LogWarning("ENEMYVIS spawn failed " + w);
+                }
+            }
+            float end = Time.realtimeSinceStartup + 36f, splitAt = Time.realtimeSinceStartup + 6f, nextLog = 0f;
+            bool split = false;
+            while (Time.realtimeSinceStartup < end)
+            {
+                if (NetSession.IsHost && !split && Time.realtimeSinceStartup >= splitAt)
+                {
+                    split = true;
+                    foreach (var a in spawned)
+                        if (a && a.name.ToLowerInvariant().Contains("blob") && a.healthHaver && !a.healthHaver.IsDead)
+                        {
+                            a.healthHaver.ApplyDamage(10000f, Vector2.up, "regression", CoreDamageTypes.None, DamageCategory.Unstoppable, true);
+                            Plugin.Log.LogInfo("ENEMYVIS killed " + a.name + " to split it");
+                        }
+                }
+                if (Time.realtimeSinceStartup >= nextLog)
+                {
+                    nextLog = Time.realtimeSinceStartup + 0.5f;
+                    var sb = new System.Text.StringBuilder("ENEMYVIS t=" + Time.realtimeSinceStartup.ToString("F1"));
+                    foreach (var kv in NetIds.All)
+                    {
+                        var a = kv.Value as AIActor;
+                        if (!a || a.healthHaver == null || a.healthHaver.IsDead) continue;
+                        bool drawn = a.sprite && a.sprite.renderer && a.sprite.renderer.enabled;
+                        var gun = a.aiShooter ? a.aiShooter.CurrentGun : null;
+                        bool laser = gun && gun.LaserSight && gun.LaserSight.renderer && gun.LaserSight.renderer.enabled;
+                        sb.Append(" | ").Append(kv.Key).Append(' ').Append(a.name.Replace(" ", "_").Replace("(Clone)", ""))
+                          .Append(drawn ? " D" : " h").Append(a.HasBeenEngaged ? "E" : "e").Append(laser ? "L" : "-")
+                          .Append(gun ? " a" + Mathf.RoundToInt(a.aiShooter.GunAngle) : "");
+                    }
+                    Plugin.Log.LogInfo(sb.ToString());
+                }
+                yield return null;
             }
         }
 

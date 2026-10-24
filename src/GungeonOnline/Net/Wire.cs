@@ -104,6 +104,17 @@ namespace GungeonOnline.Net
             return a;
         }
 
+        /// <summary>A string with a larger cap (8 MB), for bulk data such as save state.</summary>
+        public string LongStr()
+        {
+            int n = (int)VarU();
+            if (n < 0 || n > 8 * 1024 * 1024) throw new WireException("string too long");
+            Need(n);
+            var s = Encoding.UTF8.GetString(Buffer, Pos, n);
+            Pos += n;
+            return s;
+        }
+
         public string Str()
         {
             int n = (int)VarU();
