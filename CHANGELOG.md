@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.6
+
+- Floors with wall mimics: a guest's copy of a wall mimic no longer fails to appear (it used to error and be sent again every few seconds).
+- A floor always finishes loading even when one player's arrival on it fails (for example a friend who drops or reconnects during the load). Before, that stopped the load for everyone on that PC and left them stuck on a frozen screen.
+
 ## 1.1.5
 
 - Guests were sometimes sent back to the Breach with a message about different mods, even with no other mods installed. The game reads each player's save while it builds a floor (story progress, what you have seen before, stats), so two players with different saves could build different floors. Guests now build every floor with the host's save state, so floors match.

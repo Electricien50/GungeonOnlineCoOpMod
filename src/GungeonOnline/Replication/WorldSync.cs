@@ -81,12 +81,21 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.Die)), prefix: new HarmonyMethod(t, nameof(DiePrefix)));
             // Client: enemies that appear on their own (split-on-death, summons) are the host's to spawn.
             h.Patch(AccessTools.Method(typeof(AIActor), "Start"), prefix: new HarmonyMethod(t, nameof(ActorStartPrefix)));
+            // A copy of a host's wall mimic is placed where the host's one is; marking the wall cells there can fail.
+            // The copy's own AI never runs, so it needs none of that: the copy is kept instead of failing the spawn.
+            h.Patch(AccessTools.Method(typeof(WallMimicController), nameof(WallMimicController.ConfigureOnPlacement)), finalizer: new HarmonyMethod(t, nameof(CopyPlacementFinalizer)));
             h.Patch(AccessTools.Method(typeof(Dungeon), nameof(Dungeon.SpawnCurseReaper)), prefix: new HarmonyMethod(t, nameof(SpawnReaperPrefix)));
             h.Patch(AccessTools.Method(typeof(SuperReaperController), "HandleMotion"), prefix: new HarmonyMethod(t, nameof(ReaperMotionPrefix)));
             // Boss death: the host kills the remaining enemies and their deaths replicate; the client must not do it itself.
             h.Patch(AccessTools.Method(typeof(BossKillCam), "KillAllEnemies"), prefix: new HarmonyMethod(t, nameof(ClientBlock)));
             // Client: erasing its own copy of the floor's boss must not start a boss kill cam (it froze the player).
             h.Patch(AccessTools.Method(typeof(GameUIRoot), nameof(GameUIRoot.TriggerBossKillCam)), prefix: new HarmonyMethod(t, nameof(KillCamPrefix)));
+        }
+
+        static System.Exception CopyPlacementFinalizer(System.Exception __exception)
+        {
+            if (__exception != null && IsClient && ApplyingHost) { Plugin.Log.LogInfo("WorldSync: wall mimic copy placed without its wall cells"); return null; }
+            return __exception;
         }
 
         static bool erasing;

@@ -20,6 +20,10 @@ namespace GungeonOnline.Game
                 prefix: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(Prefix)));
             // A friend who reconnects while a floor loads is made before their guns exist. The gun HUD and the shop's
             // item roll read those guns; their errors stopped the end of the floor load, so the floor never opened.
+            // One player's level-loaded step failing (a friend who left or reconnected during the load) stopped the end
+            // of the load for everyone on this PC, so the floor never opened. Online, it is logged and the load goes on.
+            h.Patch(AccessTools.Method(typeof(PlayerController), "BraveOnLevelWasLoaded"),
+                finalizer: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(LevelLoadedFinalizer)));
             h.Patch(AccessTools.Method(typeof(GenericIntroDoer), nameof(GenericIntroDoer.PlayerEntered)),
                 prefix: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(IntroPrefix)));
             h.Patch(AccessTools.Method(typeof(GameUIRoot), nameof(GameUIRoot.UpdateGunData)),
@@ -41,6 +45,13 @@ namespace GungeonOnline.Game
             if (Session.NetSession.IsHost && Replication.WorldSync.Instance != null && !Replication.WorldSync.Instance.IsSlotReady(PlayerSlots.SlotOf(player)))
             { Plugin.Log.LogInfo("Boss intro: ignored a friend who has not loaded this floor yet"); return false; }
             return true;
+        }
+
+        static System.Exception LevelLoadedFinalizer(PlayerController __instance, System.Exception __exception)
+        {
+            if (__exception == null || !Session.NetSession.Active) return __exception;
+            Plugin.Log.LogWarning($"Level load: {(__instance ? __instance.name : "a player")} could not finish its arrival ({__exception.GetType().Name}); the floor opens anyway");
+            return null;
         }
 
         static bool Unarmed(PlayerController p) => p == null || p.inventory == null || p.inventory.AllGuns == null;
