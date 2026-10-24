@@ -294,7 +294,39 @@ namespace GungeonOnline.Game
                 Plugin.Log.LogInfo($"RunSync: host moved to floor index {index} while we rejoin, going there instead");
                 return;
             }
+            // Busy with a load of our own (walking through the character select door as the host starts the run,
+            // say): loading the floor now breaks both loads. Go there as soon as this game has a character again.
+            if (Busy())
+            {
+                pendingSeed = seed; pendingIndex = index; pendingInjected = injected; hasPending = true;
+                rejoining = true;
+                Plugin.Log.LogInfo($"RunSync: host started floor index {index} while we were loading, following when ready");
+                StartCoroutine(LoadWhenFree());
+                return;
+            }
             LoadFloor(seed, index, injected);
+        }
+
+        static bool Busy()
+        {
+            var gm = GameManager.Instance;
+            return gm.IsLoadingLevel || Dungeon.IsGenerating || gm.PrimaryPlayer == null || gm.IsSelectingCharacter;
+        }
+
+        System.Collections.IEnumerator LoadWhenFree()
+        {
+            float freeSince = -1f;
+            while (NetSession.Active)
+            {
+                // Free for half a second in a row: the Breach has settled after the character change.
+                if (Busy()) freeSince = -1f;
+                else if (freeSince < 0f) freeSince = Time.realtimeSinceStartup;
+                else if (Time.realtimeSinceStartup - freeSince > 0.5f) break;
+                yield return null;
+            }
+            if (!NetSession.Active || !hasPending) { rejoining = hasPending = false; yield break; }
+            hasPending = false;
+            LoadFloor(pendingSeed, pendingIndex, pendingInjected);
         }
 
         static bool hasPending;
