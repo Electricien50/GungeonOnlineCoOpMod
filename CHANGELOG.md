@@ -7,6 +7,7 @@
 - Guests see enemies aim their guns and see the Sniper Shell's aiming laser before it fires.
 - Kill Pillars (the statue boss) is visible for guests. Before, guests could not see it for the whole fight.
 - Talking to an NPC or a shrine no longer freezes anyone. A friend's conversation used to block your own, which could leave you unable to move until you died. Conversations now finish on every screen with the answers each player chose.
+- After the host's game closes and the saved run is resumed, a friend still on the old copy of the floor no longer starts a boss intro on the host (which froze the host), and a friend who reconnects while a floor loads no longer stops that floor from loading.
 
 ## 1.1.4
 
