@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.5
+
+- Guests were sometimes sent back to the Breach with a message about different mods, even with no other mods installed. The game reads each player's save while it builds a floor (story progress, what you have seen before, stats), so two players with different saves could build different floors. Guests now build every floor with the host's save state, so floors match.
+- Guests now see enemies that appear during a fight: slimes when they split, ghosts and other enemies that fade in, and summoned enemies. Before, they stayed invisible on the guest and the guest's shots passed through them.
+- Guests see enemies aim their guns and see the Sniper Shell's aiming laser before it fires.
+- Kill Pillars (the statue boss) is visible for guests. Before, guests could not see it for the whole fight.
+- Talking to an NPC or a shrine no longer freezes anyone. A friend's conversation used to block your own, which could leave you unable to move until you died. Conversations now finish on every screen with the answers each player chose.
+
 ## 1.1.4
 
 - Content mods (ExpandTheGungeon, Planetside of Gunymede, Modular, GungeonCraft and other enemy and room mods): a guest no longer gets stuck loading every floor after the first. Joining used to remove the mods' own enemy and boss templates along with the Breach's enemies, which broke the mods' enemy lookups and stopped the guest's floors from generating.
