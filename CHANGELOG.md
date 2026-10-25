@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.7
+
+- The mouse pointer shows on top of the online menu. Before, it was hidden behind the menu, so the menu could only be used with keys or a controller.
+- Pop-up messages no longer draw over the online menu (they covered its title and the invite code). The menu shows the same information itself.
+- Long hints in the online menu wrap inside its box instead of running past its edges.
+
 ## 1.1.6
 
 - The Door Lord (the boss door mimic) dies on a guest's screen too. Before, its copy errored and stayed alive for the guest.

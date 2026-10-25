@@ -449,7 +449,7 @@ namespace GungeonOnline.Session
                     var prop = HarmonyLib.AccessTools.Property(typeof(GameCursorController), "showMouseCursor");
                     gameShowsPointer = prop != null ? (System.Func<bool>)(() => (bool)prop.GetValue(null, null)) : () => true;
                 }
-                if (!gameShowsPointer()) return;
+                if (!gameShowsPointer() && !(Dev.DevEnv.IsHarness && System.Environment.GetEnvironmentVariable("GO_TEST_POINTER") != null)) return;
                 if (!cursorCtl) cursorCtl = UnityEngine.Object.FindObjectOfType<GameCursorController>();
                 if (!cursorCtl) return;
                 var tex = cursorCtl.normalCursor;
@@ -459,6 +459,14 @@ namespace GungeonOnline.Session
                 float scale = Pixelator.Instance != null ? (int)Pixelator.Instance.ScaleTileScale : 3f;
                 var size = new Vector2(tex.width, tex.height) * scale;
                 var m = new Vector2(UnityEngine.Input.mousePosition.x, UnityEngine.Screen.height - UnityEngine.Input.mousePosition.y);
+                // UI test (hidden window, no real mouse over it): GO_TEST_POINTER=x,y as fractions of the screen.
+                var tp = Dev.DevEnv.IsHarness ? System.Environment.GetEnvironmentVariable("GO_TEST_POINTER") : null;
+                if (!string.IsNullOrEmpty(tp))
+                {
+                    var parts = tp.Split(',');
+                    m = new Vector2(float.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture) * UnityEngine.Screen.width,
+                                    float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) * UnityEngine.Screen.height);
+                }
                 var oldMatrix = GUI.matrix;
                 GUI.matrix = Matrix4x4.identity;
                 GUI.DrawTexture(new Rect(m.x + 0.5f - size.x / 2f, m.y + 0.5f - size.y / 2f, size.x, size.y), tex);
@@ -803,6 +811,8 @@ namespace GungeonOnline.Session
 
         static string RouterLine(NetSession s)
         {
+            if (Dev.DevEnv.IsHarness && System.Environment.GetEnvironmentVariable("GO_FAKE_UPNP") == "failed")
+                return "If your friend can't get in, ask for their reply code and pick Let in friend."; // UI test: a router that did not open
             if (s.Upnp == null) return "";
             switch (s.Upnp.Status)
             {

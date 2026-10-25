@@ -106,7 +106,12 @@ namespace GungeonOnline.Dev
                     tourStep = step + 1;
                     if (what == "pause") { menu?.Close(); GameManager.Instance.Pause(); }
                     else if (what == "close") { menu?.Close(); GameManager.Instance.Unpause(); }
-                    else { var p = what.Split(':'); menu?.ShowForHarness(p[0], int.Parse(p[1])); }
+                    else
+                    {
+                        var p = what.Split(':'); menu?.ShowForHarness(p[0], int.Parse(p[1]));
+                        // GO_UI_TOAST=1: a message pops up while the menu is open (it must not draw over the menu).
+                        if (System.Environment.GetEnvironmentVariable("GO_UI_TOAST") == "1") Session.Toasts.Show("Invite code copied: TEST-CODE-1234. Paste it to your friend.", 4f);
+                    }
                     shotTaken = false;
                 }
             }
