@@ -49,6 +49,8 @@ namespace GungeonOnline.Session
                 return;
             }
             list.RemoveAll(t => t.Until < now);
+            // The online menu shows the same status itself; messages drawn over it only cover its title and code.
+            if (OnlineMenu.IsOpen) return;
             DrawGame(now);
             return;
             var style = MenuStyle.Toast;

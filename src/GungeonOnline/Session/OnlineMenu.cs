@@ -360,7 +360,7 @@ namespace GungeonOnline.Session
         void OnGUI()
         {
             if (pendingRow >= 0 && entries.Count > 0) { sel = Mathf.Min(pendingRow, entries.Count - 1); pendingRow = -1; }
-            if (GungeonUI.Ready) { if (!open) DrawQualityHintGame(); else DrawGame(); return; }
+            if (GungeonUI.Ready) { if (!open) DrawQualityHintGame(); else { DrawGame(); DrawPointer(); } return; }
             if (!open) return; // the game's art is still loading: nothing in a system font meanwhile
             if (!open) { DrawQualityHint(); return; }
             var s = NetSession.Instance;
@@ -434,6 +434,40 @@ namespace GungeonOnline.Session
 
         static readonly Color Dim = new Color(0.62f, 0.6f, 0.58f);
 
+        static GameCursorController cursorCtl;
+        static System.Func<bool> gameShowsPointer;
+
+        /// <summary>The game draws its mouse pointer underneath this menu. Draw the same pointer again on top
+        /// while the menu is open (only when the game itself would show one).</summary>
+        static void DrawPointer()
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            try
+            {
+                if (gameShowsPointer == null)
+                {
+                    var prop = HarmonyLib.AccessTools.Property(typeof(GameCursorController), "showMouseCursor");
+                    gameShowsPointer = prop != null ? (System.Func<bool>)(() => (bool)prop.GetValue(null, null)) : () => true;
+                }
+                if (!gameShowsPointer()) return;
+                if (!cursorCtl) cursorCtl = UnityEngine.Object.FindObjectOfType<GameCursorController>();
+                if (!cursorCtl) return;
+                var tex = cursorCtl.normalCursor;
+                int idx = GameManager.Options != null ? GameManager.Options.CurrentCursorIndex : -1;
+                if (cursorCtl.cursors != null && idx >= 0 && idx < cursorCtl.cursors.Length && cursorCtl.cursors[idx]) tex = cursorCtl.cursors[idx];
+                if (!tex) return;
+                float scale = Pixelator.Instance != null ? (int)Pixelator.Instance.ScaleTileScale : 3f;
+                var size = new Vector2(tex.width, tex.height) * scale;
+                var m = new Vector2(UnityEngine.Input.mousePosition.x, UnityEngine.Screen.height - UnityEngine.Input.mousePosition.y);
+                var oldMatrix = GUI.matrix;
+                GUI.matrix = Matrix4x4.identity;
+                GUI.DrawTexture(new Rect(m.x + 0.5f - size.x / 2f, m.y + 0.5f - size.y / 2f, size.x, size.y), tex);
+                GUI.matrix = oldMatrix;
+            }
+            catch (System.Exception e) { if (!pointerErrorLogged) { pointerErrorLogged = true; Plugin.Log.LogWarning("Menu pointer: " + e.Message); } }
+        }
+        static bool pointerErrorLogged;
+
         /// <summary>
         /// The menu as the game would draw it: the HUD's dark gun-box frame, Alagard title, Daikon items, gold for
         /// the selected row with the options menu's little arrows, 04b03 for small print.
@@ -449,18 +483,19 @@ namespace GungeonOnline.Session
             GUI.color = old;
 
             float row = 17 * px, small = 11 * px;
-            // Measure first so the frame fits its content.
-            float contentH = 26 * px;
+            // Width first (it only depends on the rows), then every text block is wrapped to fit inside it.
             string router = screen == Screen.Host ? RouterLine(s) : "";
-            if (screen == Screen.Host) contentH += 22 * px + 3 * px + small + (router.Length > 0 ? small : 0) + 8 * px;
-            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, NetSession.Active ? PlayerCount(s) - 1 : 1)) + 8 * px;
-            if (!string.IsNullOrEmpty(info)) contentH += small * WrapCount(info) + 4 * px;
-            if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) contentH += small * WrapCount(s.LastError) + 4 * px;
-            contentH += row * entries.Count + (typing ? row + small : 0) + small + 10 * px;
             float widest = GungeonUI.Measure(Title(), GungeonUI.Font.Title).x;
             foreach (var e0 in entries) widest = Mathf.Max(widest, GungeonUI.Measure(e0.Label, GungeonUI.Font.Menu).x + 30 * px);
             if (screen == Screen.Host) widest = Mathf.Max(widest, GungeonUI.Measure(s.InviteCodeText ?? "", GungeonUI.Font.Menu, 1.5f).x);
-            float w = Mathf.Min(sw - 20 * px, Mathf.Max(200 * px, widest + 36 * px)), h = contentH + 20 * px;
+            float w = Mathf.Min(sw - 20 * px, Mathf.Max(200 * px, widest + 36 * px)), wrapW = w - 24 * px;
+            float contentH = 26 * px;
+            if (screen == Screen.Host) contentH += 22 * px + 3 * px + small + (router.Length > 0 ? small * Wrap(router, wrapW).Count : 0) + 8 * px;
+            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, NetSession.Active ? PlayerCount(s) - 1 : 1)) + 8 * px;
+            if (!string.IsNullOrEmpty(info)) contentH += small * Wrap(info, wrapW).Count + 4 * px;
+            if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) contentH += small * Wrap(s.LastError, wrapW).Count + 4 * px;
+            contentH += row * entries.Count + (typing ? row + small : 0) + small + 10 * px;
+            float h = contentH + 20 * px;
             float x = Mathf.Round((sw - w) / 2f), y = Mathf.Round((sh - h) / 2f);
             GungeonUI.Fill(new Rect(x + 2 * px, y + 2 * px, w - 4 * px, h - 4 * px), 1f);
             switch (NetConfig.LookFrame.Value)
@@ -490,7 +525,7 @@ namespace GungeonOnline.Session
                 cy += Mathf.Max(cs.y, 22 * px) + 3 * px;
                 GungeonUI.TextCentered(s.InviteCodeText != null ? "Copied. Paste it to your friend." : "Getting your code...", cx, cy, GungeonUI.Font.Small, GungeonUI.Cream);
                 cy += small;
-                if (router.Length > 0) { GungeonUI.TextCentered(router, cx, cy, GungeonUI.Font.Small, Dim); cy += small; }
+                if (router.Length > 0) cy = Wrapped(router, cx, cy, inner, Dim);
                 cy += 8 * px;
             }
             if (screen == Screen.Session) cy = DrawPlayersGame(s, cx, cy, row) + 4 * px;
