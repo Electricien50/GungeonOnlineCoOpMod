@@ -127,6 +127,15 @@ namespace GungeonOnline.Game
             if (remotes.TryGetValue(slot, out var existing) && existing)
             {
                 if (remoteChoice.TryGetValue(slot, out var prev) && prev == prefabPath) return existing;
+                // A character swap that arrives while a floor loads: the old copy can only go once the load is over,
+                // and making the new one now would leave the old one behind for good. Swap when the load is done.
+                if (!oldSwap && gm.IsLoadingLevel && Plugin.Instance != null)
+                {
+                    bool waiting = swapAfterLoad.ContainsKey(slot);
+                    swapAfterLoad[slot] = prefabPath;
+                    if (!waiting) Plugin.Instance.StartCoroutine(SwapAfterLoad(slot));
+                    return existing;
+                }
                 if (!oldSwap) keepAt = existing.transform.position; // a character swap: the new one stands where they are
                 Despawn(slot);
             }
@@ -145,6 +154,18 @@ namespace GungeonOnline.Game
             Plugin.Instance.StartCoroutine(FinishSpawn(p));
             Plugin.Log.LogInfo($"PlayerSlots: slot {slot} spawned as {prefabPath} (player id {p.PlayerIDX})");
             return p;
+        }
+
+        static readonly Dictionary<int, string> swapAfterLoad = new Dictionary<int, string>();
+
+        static System.Collections.IEnumerator SwapAfterLoad(int slot)
+        {
+            while (GameManager.HasInstance && GameManager.Instance.IsLoadingLevel) yield return null;
+            yield return null;
+            if (!swapAfterLoad.TryGetValue(slot, out var path)) yield break;
+            swapAfterLoad.Remove(slot);
+            // Still that player (they did not leave meanwhile): now the old copy can go and the new one comes in.
+            if (remotes.ContainsKey(slot)) SpawnRemote(slot, path);
         }
 
         static System.Collections.IEnumerator FinishSpawn(PlayerController p)
@@ -213,6 +234,7 @@ namespace GungeonOnline.Game
 
         public static void Clear()
         {
+            swapAfterLoad.Clear();
             foreach (var s in new List<int>(remotes.Keys)) Despawn(s);
         }
 

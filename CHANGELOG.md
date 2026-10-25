@@ -2,6 +2,7 @@
 
 ## 1.1.6
 
+- A friend whose new character reaches the host during a floor load is swapped cleanly once the floor is loaded. Before, the host could keep the old character as an extra player for the rest of the run.
 - A friend who changes character in the Breach just as the host starts the run follows the host onto the first floor. Before, their game could fail to load it and end up on a different floor, which ended the session.
 - Kill Pillars and other bosses made of several parts show up for a friend who finishes loading a floor after the host. Before, their parts could be missing until the game noticed and sent the whole floor again.
 - Floors with wall mimics: a guest's copy of a wall mimic no longer fails to appear (it used to error and be sent again every few seconds).
