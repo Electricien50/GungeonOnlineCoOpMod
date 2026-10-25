@@ -84,6 +84,10 @@ namespace GungeonOnline.Replication
             // A copy of a host's wall mimic is placed where the host's one is; marking the wall cells there can fail.
             // The copy's own AI never runs, so it needs none of that: the copy is kept instead of failing the spawn.
             h.Patch(AccessTools.Method(typeof(WallMimicController), nameof(WallMimicController.ConfigureOnPlacement)), finalizer: new HarmonyMethod(t, nameof(CopyPlacementFinalizer)));
+            // The Door Lord's death code reaches for the boss door it replaced, which a guest's copy does not have:
+            // without this the copy never dies on the guest's screen.
+            var doorDeath = AccessTools.Method(typeof(BossDoorMimicDeathController), "OnBossDeath");
+            if (doorDeath != null) h.Patch(doorDeath, finalizer: new HarmonyMethod(t, nameof(CopyDeathFinalizer)));
             h.Patch(AccessTools.Method(typeof(Dungeon), nameof(Dungeon.SpawnCurseReaper)), prefix: new HarmonyMethod(t, nameof(SpawnReaperPrefix)));
             h.Patch(AccessTools.Method(typeof(SuperReaperController), "HandleMotion"), prefix: new HarmonyMethod(t, nameof(ReaperMotionPrefix)));
             // Boss death: the host kills the remaining enemies and their deaths replicate; the client must not do it itself.
@@ -95,6 +99,12 @@ namespace GungeonOnline.Replication
         static System.Exception CopyPlacementFinalizer(System.Exception __exception)
         {
             if (__exception != null && IsClient && ApplyingHost) { Plugin.Log.LogInfo("WorldSync: wall mimic copy placed without its wall cells"); return null; }
+            return __exception;
+        }
+
+        static System.Exception CopyDeathFinalizer(System.Exception __exception)
+        {
+            if (__exception != null && IsClient) { Plugin.Log.LogInfo("WorldSync: boss copy died without its door"); return null; }
             return __exception;
         }
 
