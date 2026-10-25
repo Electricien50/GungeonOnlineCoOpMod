@@ -5,6 +5,7 @@
 - The mouse pointer shows on top of the online menu. Before, it was hidden behind the menu, so the menu could only be used with keys or a controller.
 - Pop-up messages no longer draw over the online menu (they covered its title and the invite code). The menu shows the same information itself.
 - Long hints in the online menu wrap inside its box instead of running past its edges.
+- Long online menu pages (Your friends) fit on the screen. Before, their title and bottom row were cut off.
 
 ## 1.1.6
 

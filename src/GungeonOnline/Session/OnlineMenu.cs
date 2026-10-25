@@ -497,12 +497,18 @@ namespace GungeonOnline.Session
             foreach (var e0 in entries) widest = Mathf.Max(widest, GungeonUI.Measure(e0.Label, GungeonUI.Font.Menu).x + 30 * px);
             if (screen == Screen.Host) widest = Mathf.Max(widest, GungeonUI.Measure(s.InviteCodeText ?? "", GungeonUI.Font.Menu, 1.5f).x);
             float w = Mathf.Min(sw - 20 * px, Mathf.Max(200 * px, widest + 36 * px)), wrapW = w - 24 * px;
-            float contentH = 26 * px;
-            if (screen == Screen.Host) contentH += 22 * px + 3 * px + small + (router.Length > 0 ? small * Wrap(router, wrapW).Count : 0) + 8 * px;
-            if (screen == Screen.Session) contentH += row * (1 + Mathf.Max(1, NetSession.Active ? PlayerCount(s) - 1 : 1)) + 8 * px;
-            if (!string.IsNullOrEmpty(info)) contentH += small * Wrap(info, wrapW).Count + 4 * px;
-            if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) contentH += small * Wrap(s.LastError, wrapW).Count + 4 * px;
-            contentH += row * entries.Count + (typing ? row + small : 0) + small + 10 * px;
+            float ContentH(float r)
+            {
+                float c = 26 * px;
+                if (screen == Screen.Host) c += 22 * px + 3 * px + small + (router.Length > 0 ? small * Wrap(router, wrapW).Count : 0) + 8 * px;
+                if (screen == Screen.Session) c += r * (1 + Mathf.Max(1, NetSession.Active ? PlayerCount(s) - 1 : 1)) + 8 * px;
+                if (!string.IsNullOrEmpty(info)) c += small * Wrap(info, wrapW).Count + 4 * px;
+                if (!string.IsNullOrEmpty(s.LastError) && (screen == Screen.Home || screen == Screen.Join)) c += small * Wrap(s.LastError, wrapW).Count + 4 * px;
+                return c + r * entries.Count + (typing ? r + small : 0) + small + 10 * px;
+            }
+            float contentH = ContentH(row);
+            // A long page (Your friends has 14 rows) must still fit on the screen: tighten the rows until it does.
+            while (contentH + 20 * px > sh - 8 * px && row > 12 * px) { row -= px; contentH = ContentH(row); }
             float h = contentH + 20 * px;
             float x = Mathf.Round((sw - w) / 2f), y = Mathf.Round((sh - h) / 2f);
             GungeonUI.Fill(new Rect(x + 2 * px, y + 2 * px, w - 4 * px, h - 4 * px), 1f);
