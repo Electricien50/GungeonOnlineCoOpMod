@@ -95,6 +95,9 @@ namespace GungeonOnline.Dev
             string[] plan = host
                 ? new[] { "Home:0", "Host:0", "Session:0", "Settings:3", "Settings:0", "pause", "close" }
                 : new[] { "Join:0", "Session:0", "Settings:4", "close", "close", "close", "close" };
+            // GO_UI_TOUR_PLAN=Screen:row,...: a different list of screens (host only), e.g. the settings pages.
+            var custom = System.Environment.GetEnvironmentVariable("GO_UI_TOUR_PLAN");
+            if (host && !string.IsNullOrEmpty(custom)) plan = (custom + ",close").Split(',');
             int step = (int)(g / 2.5f);
             if (g < 0 || step >= plan.Length) { if (step >= plan.Length) { tourStep = 99; menu?.Close(); GameManager.Instance.Unpause(); } return; }
             float within = g - step * 2.5f;
