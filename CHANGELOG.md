@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.8
+
+- A player who is on fire shows as burning on every screen, and only while they really are. Before, the other screens never showed it (or showed a copy burning from flames on the floor there).
+- Alternate costumes show on every screen. Before, the other players saw the regular outfit.
+- After a character swap, the host's player finishes arriving on every new floor again (the free blank refill, reload and item effects at the start of a floor). Before, that step stopped half way on every later floor.
+
 ## 1.1.7
 
 - The mouse pointer shows on top of the online menu. Before, it was hidden behind the menu, so the menu could only be used with keys or a controller.

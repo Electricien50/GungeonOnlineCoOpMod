@@ -826,6 +826,7 @@ namespace GungeonOnline.Dev
             try { SwapTest(Time.realtimeSinceStartup); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: swap step error " + e.Message); }
             try { StatueSwap(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: statue swap error " + e.Message); }
             try { BreachReturn(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: breach return error " + e.Message); }
+            try { LookCheck.Tick(); } catch (System.Exception e) { Plugin.Log.LogInfo("LOOKCHECK error " + e.Message); }
             try { BossKill(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: boss kill error " + e.Message); }
             try { DeathButton(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: death button error " + e); }
             try { PedestalTake(); } catch (System.Exception e) { Plugin.Log.LogInfo("Harness: pedestal take error " + e.Message); }

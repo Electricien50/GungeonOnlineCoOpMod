@@ -16,7 +16,7 @@ namespace GungeonOnline.Session
         public static readonly Dictionary<int, int> Colors = new Dictionary<int, int>();
         int sentColor = -2;
 
-        public sealed class Entry { public string Prefab = ""; public string Name = ""; }
+        public sealed class Entry { public string Prefab = ""; public string Name = ""; public bool Alt; } // Alt: wearing the alternate costume
         public readonly Dictionary<int, Entry> Roster = new Dictionary<int, Entry>();
 
         /// <summary>Each player's own aim assist settings, so every machine aims their copy the way they aim it.</summary>
@@ -84,27 +84,29 @@ namespace GungeonOnline.Session
             if (local != null && Game.SceneObjects.InBreach)
             {
                 string mine = PrefabOf(local);
+                bool myAlt = local.IsUsingAlternateCostume;
+                string myKey = mine + (myAlt ? "|alt" : "");
                 // Guest: if the host's player list still doesn't show our pick (it was sent before the connection was
                 // up, or lost), send it again every two seconds until it does.
                 if (!NetSession.IsHost && NetSession.Instance.Node != null && NetSession.Instance.Node.Connections.Count > 0
                     && Time.realtimeSinceStartup >= nextChoiceCheck)
                 {
                     nextChoiceCheck = Time.realtimeSinceStartup + 2f;
-                    if (!Roster.TryGetValue(NetSession.LocalSlot, out var me) || me.Prefab != mine) sentChoice = null;
+                    if (!Roster.TryGetValue(NetSession.LocalSlot, out var me) || me.Prefab != mine || me.Alt != myAlt) sentChoice = null;
                 }
-                if (mine != sentChoice)
+                if (myKey != sentChoice)
                 {
-                    sentChoice = mine;
+                    sentChoice = myKey;
                     if (NetSession.IsHost)
                     {
-                        Roster[0] = new Entry { Prefab = mine, Name = NetConfig.PlayerName.Value };
+                        Roster[0] = new Entry { Prefab = mine, Name = NetConfig.PlayerName.Value, Alt = myAlt };
                         SendRoster();
                     }
                     else
                     {
                         var w = new WireWriter(64);
-                        w.U8(MsgChoice); w.Str(mine); w.Str(NetConfig.PlayerName.Value);
-                        Plugin.Log.LogInfo($"Lobby: sending my character {mine} to {NetSession.Instance.Node.Connections.Count} peer(s)");
+                        w.U8(MsgChoice); w.Str(mine); w.Str(NetConfig.PlayerName.Value); w.Bool(myAlt);
+                        Plugin.Log.LogInfo($"Lobby: sending my character {myKey} to {NetSession.Instance.Node.Connections.Count} peer(s)");
                         NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
                     }
                 }
@@ -130,7 +132,7 @@ namespace GungeonOnline.Session
             if (local != null)
                 foreach (var kv in Roster)
                     if (kv.Key != NetSession.LocalSlot && kv.Value.Prefab.Length > 0 && PlayerSlots.ForSlot(kv.Key) == null)
-                        PlayerSlots.SpawnRemote(kv.Key, kv.Value.Prefab);
+                        PlayerSlots.SpawnRemote(kv.Key, kv.Value.Prefab, kv.Value.Alt);
         }
 
         static AimPrefs MyAim()
@@ -204,7 +206,7 @@ namespace GungeonOnline.Session
             var w = new WireWriter(128);
             w.U8(MsgRoster);
             w.U8((byte)Roster.Count);
-            foreach (var kv in Roster) { w.U8((byte)kv.Key); w.Str(kv.Value.Prefab); w.Str(kv.Value.Name); }
+            foreach (var kv in Roster) { w.U8((byte)kv.Key); w.Str(kv.Value.Prefab); w.Str(kv.Value.Name); w.Bool(kv.Value.Alt); }
             NetSession.Instance.Node.Broadcast((byte)Channel.Lobby, w.ToArray(), Delivery.ReliableOrdered);
         }
 
@@ -246,8 +248,8 @@ namespace GungeonOnline.Session
             }
             if (type == MsgChoice && NetSession.IsHost)
             {
-                Roster[c.Slot] = new Entry { Prefab = r.Str(), Name = r.Str() };
-                Plugin.Log.LogInfo($"Lobby: slot {c.Slot} picked {Roster[c.Slot].Prefab}");
+                Roster[c.Slot] = new Entry { Prefab = r.Str(), Name = r.Str(), Alt = r.Bool() };
+                Plugin.Log.LogInfo($"Lobby: slot {c.Slot} picked {Roster[c.Slot].Prefab}{(Roster[c.Slot].Alt ? " (alternate costume)" : "")}");
                 SendRoster();
             }
             else if (type == MsgRoster && !NetSession.IsHost)
@@ -257,7 +259,7 @@ namespace GungeonOnline.Session
                 for (int i = 0; i < n; i++)
                 {
                     int slot = r.U8();
-                    Roster[slot] = new Entry { Prefab = r.Str(), Name = r.Str() };
+                    Roster[slot] = new Entry { Prefab = r.Str(), Name = r.Str(), Alt = r.Bool() };
                     seen.Add(slot);
                 }
                 foreach (var slot in new List<int>(Roster.Keys))
@@ -266,7 +268,7 @@ namespace GungeonOnline.Session
             // Re-spawn with a new character if someone changed theirs.
             foreach (var kv in Roster)
                 if (kv.Key != NetSession.LocalSlot && kv.Value.Prefab.Length > 0)
-                    PlayerSlots.SpawnRemote(kv.Key, kv.Value.Prefab);
+                    PlayerSlots.SpawnRemote(kv.Key, kv.Value.Prefab, kv.Value.Alt);
         }
     }
 }

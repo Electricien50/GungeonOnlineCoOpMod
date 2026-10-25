@@ -98,6 +98,23 @@ namespace GungeonOnline.Game
             return p;
         }
 
+        /// <summary>Before a player's floor arrival: the game's "other player" must be a live copy. After a character
+        /// swap it could still point at the old, destroyed one, and the arrival then stopped half way (no new floor
+        /// blanks, no reload, no item floor effects) on every later floor.</summary>
+        public static void EnsureSecondary()
+        {
+            if (!Session.NetSession.Active || !GameManager.HasInstance || remotes.Count == 0) return;
+            var gm = GameManager.Instance;
+            bool anyLive = false;
+            foreach (var kv in remotes) if (kv.Value) { anyLive = true; break; }
+            if (!anyLive) return;
+            var second = gm.SecondaryPlayer;
+            if (gm.CurrentGameType == GameManager.GameType.COOP_2_PLAYER && second) return;
+            if (gm.CurrentGameType != GameManager.GameType.COOP_2_PLAYER) gm.CurrentGameType = GameManager.GameType.COOP_2_PLAYER;
+            RepointSecondary();
+            Plugin.Log.LogInfo("PlayerSlots: second player pointed back at the live copy before the floor arrival");
+        }
+
         /// <summary>The game's second player is the remote with the lowest id that is still here.</summary>
         static void RepointSecondary()
         {
@@ -118,21 +135,22 @@ namespace GungeonOnline.Game
         /// <summary>Spawn (or re-spawn with a new character) the remote player for <paramref name="slot"/>.</summary>
         static readonly bool oldSwap = System.Environment.GetEnvironmentVariable("GO_OLD_SWAP") == "1"; // tests: the 1.1.1 swap, before/after
 
-        public static PlayerController SpawnRemote(int slot, string prefabPath)
+        public static PlayerController SpawnRemote(int slot, string prefabPath, bool alt = false)
         {
+            string choice = prefabPath + (alt ? "|alt" : ""); // a costume change is a new look, like a new character
             var gm = GameManager.Instance;
             var local = Local;
             if (local == null) return null; // spawn once the local player exists
             Vector3? keepAt = null;
             if (remotes.TryGetValue(slot, out var existing) && existing)
             {
-                if (remoteChoice.TryGetValue(slot, out var prev) && prev == prefabPath) return existing;
+                if (remoteChoice.TryGetValue(slot, out var prev) && prev == choice) return existing;
                 // A character swap that arrives while a floor loads: the old copy can only go once the load is over,
                 // and making the new one now would leave the old one behind for good. Swap when the load is done.
                 if (!oldSwap && gm.IsLoadingLevel && Plugin.Instance != null)
                 {
                     bool waiting = swapAfterLoad.ContainsKey(slot);
-                    swapAfterLoad[slot] = prefabPath;
+                    swapAfterLoad[slot] = choice;
                     if (!waiting) Plugin.Instance.StartCoroutine(SwapAfterLoad(slot));
                     return existing;
                 }
@@ -148,11 +166,13 @@ namespace GungeonOnline.Game
             var p = CreateRemote(prefab, keepAt ?? local.transform.position + new Vector3(1.5f * id, 0f, 0f), id);
             if (!oldSwap) Replication.PlayerSync.Instance?.Forget(slot);
             remotes[slot] = p;
-            remoteChoice[slot] = prefabPath;
+            remoteChoice[slot] = choice;
+            // The alternate costume (picked at the character's second Breach statue) looks different: wear it here too.
+            if (alt && !p.IsUsingAlternateCostume) p.SwapToAlternateCostume();
             RepointSecondary();
             ApplyEnemyHealth();
             Plugin.Instance.StartCoroutine(FinishSpawn(p));
-            Plugin.Log.LogInfo($"PlayerSlots: slot {slot} spawned as {prefabPath} (player id {p.PlayerIDX})");
+            Plugin.Log.LogInfo($"PlayerSlots: slot {slot} spawned as {prefabPath}{(alt ? " (alternate costume)" : "")} (player id {p.PlayerIDX})");
             return p;
         }
 
@@ -165,7 +185,7 @@ namespace GungeonOnline.Game
             if (!swapAfterLoad.TryGetValue(slot, out var path)) yield break;
             swapAfterLoad.Remove(slot);
             // Still that player (they did not leave meanwhile): now the old copy can go and the new one comes in.
-            if (remotes.ContainsKey(slot)) SpawnRemote(slot, path);
+            if (remotes.ContainsKey(slot)) { int bar = path.IndexOf('|'); SpawnRemote(slot, bar < 0 ? path : path.Substring(0, bar), bar >= 0); }
         }
 
         static System.Collections.IEnumerator FinishSpawn(PlayerController p)

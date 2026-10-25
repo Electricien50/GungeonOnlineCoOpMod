@@ -23,6 +23,7 @@ namespace GungeonOnline.Game
             // One player's level-loaded step failing (a friend who left or reconnected during the load) stopped the end
             // of the load for everyone on this PC, so the floor never opened. Online, it is logged and the load goes on.
             h.Patch(AccessTools.Method(typeof(PlayerController), "BraveOnLevelWasLoaded"),
+                prefix: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(LevelLoadedPrefix)),
                 finalizer: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(LevelLoadedFinalizer)));
             h.Patch(AccessTools.Method(typeof(GenericIntroDoer), nameof(GenericIntroDoer.PlayerEntered)),
                 prefix: new HarmonyMethod(typeof(PlayerPhysicsGuard), nameof(IntroPrefix)));
@@ -47,10 +48,12 @@ namespace GungeonOnline.Game
             return true;
         }
 
+        static void LevelLoadedPrefix() => PlayerSlots.EnsureSecondary();
+
         static System.Exception LevelLoadedFinalizer(PlayerController __instance, System.Exception __exception)
         {
             if (__exception == null || !Session.NetSession.Active) return __exception;
-            Plugin.Log.LogWarning($"Level load: {(__instance ? __instance.name : "a player")} could not finish its arrival ({__exception.GetType().Name}); the floor opens anyway");
+            Plugin.Log.LogWarning($"Level load: {(__instance ? __instance.name : "a player")} could not finish its arrival; the floor opens anyway. {__exception}");
             return null;
         }
 

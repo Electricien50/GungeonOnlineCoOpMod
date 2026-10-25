@@ -19,7 +19,7 @@ namespace GungeonOnline.Replication
     internal sealed class VitalsSync : MonoBehaviour
     {
         public static VitalsSync Instance { get; private set; }
-        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43, EvPitfall = 44;
+        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43, EvPitfall = 44, EvFire = 46; // 45 is InventorySync
 
         static bool scope;
         static bool IsClient => NetSession.Active && !NetSession.IsHost;
@@ -43,6 +43,10 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(PlayerController), "Fall"),
                 prefix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPrefix)),
                 postfix: new HarmonyMethod(typeof(VitalsSync), nameof(FallPostfix)));
+            // On fire: the owner of a player decides (it walked into the flames); every other screen shows it burning.
+            h.Patch(AccessTools.PropertySetter(typeof(PlayerController), nameof(PlayerController.IsOnFire)),
+                prefix: new HarmonyMethod(typeof(VitalsSync), nameof(FirePrefix)),
+                postfix: new HarmonyMethod(typeof(VitalsSync), nameof(FirePostfix)));
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.ApplyDamage)),
                 prefix: new HarmonyMethod(typeof(VitalsSync), nameof(DamagePrefix)),
                 postfix: new HarmonyMethod(typeof(VitalsSync), nameof(DamagePostfix)));
@@ -52,7 +56,7 @@ namespace GungeonOnline.Replication
 
         void Start()
         {
-            NetSession.Instance.SessionEnded += () => { hurtSeq = 0; hurtApplied.Clear(); lastVitals.Clear(); };
+            NetSession.Instance.SessionEnded += () => { hurtSeq = 0; hurtApplied.Clear(); lastVitals.Clear(); lastFireSent = false; };
             // Hit report numbering restarts with every connection.
             NetSession.Instance.PeerJoined += c =>
             {
@@ -71,6 +75,48 @@ namespace GungeonOnline.Replication
             if (!NetSession.Active || scope || __instance == null) return true;
             var p = __instance.GetComponent<PlayerController>();
             return p == null || !PlayerSlots.IsRemote(p);
+        }
+
+        static bool fireScope;
+        static bool lastFireSent;
+
+        /// <summary>Another machine's player burns only when its owner says so (local flames never light the copy,
+        /// and the copy's own "not burning" check never puts it out early).</summary>
+        static bool FirePrefix(PlayerController __instance)
+        {
+            if (!NetSession.Active || fireScope || __instance == null) return true;
+            return !PlayerSlots.IsRemote(__instance);
+        }
+
+        /// <summary>Your own player caught fire or went out: tell everyone (the host forwards it to the others).</summary>
+        static void FirePostfix(PlayerController __instance)
+        {
+            if (!NetSession.Active || fireScope || Instance == null || __instance == null || __instance != PlayerSlots.Local) return;
+            bool on = __instance.IsOnFire;
+            if (on == lastFireSent) return;
+            lastFireSent = on;
+            Instance.SendFire(NetSession.LocalSlot, on, null);
+        }
+
+        void SendFire(int slot, bool on, Connection except)
+        {
+            w.Reset(); w.U8(EvFire); w.U8((byte)slot); w.Bool(on);
+            var msg = w.ToArray();
+            var ws = WorldSync.Instance;
+            foreach (var c in NetSession.Instance.Node.Connections)
+                if (c != except && (ws == null || ws.IsReady(c) || !NetSession.IsHost)) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
+        }
+
+        void ApplyFire(Connection from, ref WireReader r)
+        {
+            int slot = r.U8();
+            bool on = r.Bool();
+            if (NetSession.IsHost) SendFire(slot, on, from); // pass it on to everyone else
+            var p = PlayerSlots.ForSlot(slot);
+            if (!p || !PlayerSlots.IsRemote(p)) return;
+            fireScope = true;
+            try { p.IsOnFire = on; if (!on) p.CurrentFireMeterValue = 0f; }
+            finally { fireScope = false; }
         }
 
         /// <summary>Client: report every hit on its own player to the host.</summary>
@@ -221,6 +267,7 @@ namespace GungeonOnline.Replication
         /// <summary>Events 40-49, called by WorldSync's event router on both sides.</summary>
         public void Apply(Connection c, byte type, ref WireReader r)
         {
+            if (type == EvFire) { ApplyFire(c, ref r); return; }
             if (type == EvPitfall) { ApplyPitfall(c, ref r); return; }
             if (type == EvHurt && NetSession.IsHost)
             {
