@@ -3,6 +3,8 @@
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
+- A friend no longer gets stuck in the arrival elevator (unable to move for the rest of the run) when their connection drops while the elevator is opening.
+- Rooms held shut during a fight stay shut on every screen. Before, a friend could rarely see one of them open for a few seconds.
 
 ## 1.1.8
 
