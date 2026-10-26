@@ -6,6 +6,9 @@
 - A late player who walks up to a sealed fight lands next to the host's player (or the teammate in that fight), instead of in the middle of the room.
 - A player pulled into a fight no longer lands inside a wall, pillar or table: the landing spot is checked against their body, a step away from walls when there is room.
 - A player pulled into a fight (or let into one late) no longer carries on with what they were doing: a roll in progress stops, and their input is ignored until they let go of everything (0.4 s at least, 1 s at most by default; each player sets their own under Online menu > Settings > Gameplay, "Still after a pull", or `PullLockMinSeconds` / `PullLockMaxSeconds`; a max of 0 turns it off). Before, the walk or roll meant for elsewhere steered them through the fight they had just landed in.
+- Guests see the spawn marker (and hear its sounds) before wave enemies appear, like the host. Before, those enemies popped in with no warning on a guest's screen.
+- While that marker plays, the enemy cannot hurt a guest yet. Before, walking over it hit the guest.
+- The spawn marker also covers enemies that arrive as a group, and wave enemies that arrive hidden without a marker stay out of reach on a guest's screen until they show. The marker is timed to the host's, net of half the ping.
 
 ## 1.1.9
 
