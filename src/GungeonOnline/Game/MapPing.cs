@@ -192,7 +192,7 @@ namespace GungeonOnline.Game
             var mat = new Material(refRenderer.sharedMaterial) { mainTexture = Ring() };
             mr.sharedMaterial = mat;
             mr.sortingLayerName = "Foreground";
-            mr.sortingOrder = 50;
+            mr.sortingOrder = 1000;
             var mesh = new Mesh();
             mesh.vertices = new[] { new Vector3(-0.5f, -0.5f), new Vector3(0.5f, -0.5f), new Vector3(0.5f, 0.5f), new Vector3(-0.5f, 0.5f) };
             mesh.uv = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1) };
@@ -219,9 +219,9 @@ namespace GungeonOnline.Game
                 if (!p.Marker) MakeMarker(p);
                 if (!p.Marker) continue;
                 if (p.Marker.transform.parent != map.transform) p.Marker.transform.parent = map.transform;
-                p.Marker.transform.position = map.transform.position + new Vector3(p.World.x * 0.125f, p.World.y * 0.125f, -1.5f);
+                p.Marker.transform.position = map.transform.position + new Vector3(p.World.x * 0.125f, p.World.y * 0.125f, -3f);
                 // Bigger on the full map's zoomed-out view, readable on the corner map.
-                float size = (map.IsFullscreen ? 0.9f : 0.6f) * Pulse(age);
+                float size = (map.IsFullscreen ? 1.2f : 1.1f) * Pulse(age);
                 p.Marker.transform.localScale = new Vector3(size, size, 1f);
                 var c = p.Color; c.a = Alpha(age);
                 p.Mesh.colors = new[] { c, c, c, c };
@@ -262,7 +262,17 @@ namespace GungeonOnline.Game
             if (harnessDone || !Dev.DevEnv.IsHarness || !NetSession.Active || !GameManager.HasInstance) return;
             if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_PING_AT"), out var at)) { harnessDone = true; return; }
             string who = System.Environment.GetEnvironmentVariable("GO_PING_WHO") ?? "guest";
-            if (who != (NetSession.IsHost ? "host" : "guest")) { harnessDone = true; return; }
+            if (who != (NetSession.IsHost ? "host" : "guest"))
+            {
+                // The other player: GO_PING_VIEW=seconds opens its full map then (to screenshot the ring), closes 4 s later.
+                if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_PING_VIEW"), out var view)) { harnessDone = true; return; }
+                if (Time.realtimeSinceStartup < view || SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel || !Minimap.HasInstance) return;
+                harnessDone = true;
+                Minimap.Instance.ToggleMinimap(true, true);
+                Plugin.Log.LogInfo($"MAPPING harness: viewer opened the map, pings={pings.Count}");
+                StartCoroutine(CloseMapSoon(4f));
+                return;
+            }
             float t = Time.realtimeSinceStartup;
             if (t < at || SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel || !Minimap.HasInstance || !PlayerSlots.Local) return;
             if (!Minimap.Instance.IsFullscreen) { Minimap.Instance.ToggleMinimap(true, true); return; }
@@ -271,12 +281,12 @@ namespace GungeonOnline.Game
             Plugin.Log.LogInfo($"MAPPING harness: my player at {me.x:F1},{me.y:F1}");
             lastSent = -10f;
             PingAtScreen(new Vector2(Screen.width / 2f, Screen.height / 2f));
-            StartCoroutine(CloseMapSoon());
+            StartCoroutine(CloseMapSoon(3f));
         }
 
-        System.Collections.IEnumerator CloseMapSoon()
+        System.Collections.IEnumerator CloseMapSoon(float secs)
         {
-            yield return new WaitForSecondsRealtime(3f);
+            yield return new WaitForSecondsRealtime(secs);
             if (Minimap.HasInstance && Minimap.Instance) Minimap.Instance.ToggleMinimap(false);
         }
     }
