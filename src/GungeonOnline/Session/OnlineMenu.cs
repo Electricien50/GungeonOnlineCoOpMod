@@ -323,6 +323,7 @@ namespace GungeonOnline.Session
                     Add("Still after a pull, max: " + NetConfig.PullLockMax.Value.ToString("0.0") + " s", null, true,
                         d => NetConfig.PullLockMax.Value = Mathf.Clamp(Mathf.Round((NetConfig.PullLockMax.Value + d * 0.1f) * 10f) / 10f, 0f, 3f));
                     AddLootRow();
+                    AddFightWaitRows();
                     Add("Back", Back);
                     break;
                 case Screen.SetFriend:
@@ -380,6 +381,8 @@ namespace GungeonOnline.Session
                         NetConfig.PullLockMin.Value = (float)NetConfig.PullLockMin.DefaultValue;
                         NetConfig.PullLockMax.Value = (float)NetConfig.PullLockMax.DefaultValue;
                         NetConfig.LootPerPlayer.Value = (int)NetConfig.LootPerPlayer.DefaultValue;
+                        NetConfig.FightsWaitForAll.Value = (bool)NetConfig.FightsWaitForAll.DefaultValue;
+                        NetConfig.FightWaitMax.Value = (float)NetConfig.FightWaitMax.DefaultValue;
                         NetConfig.LocatorStyle.Value = (int)NetConfig.LocatorStyle.DefaultValue;
                         NetConfig.NameTagStyle.Value = (int)NetConfig.NameTagStyle.DefaultValue;
                         NetConfig.NameColor.Value = (int)NetConfig.NameColor.DefaultValue;
@@ -716,6 +719,19 @@ namespace GungeonOnline.Session
             var names = Game.LootPerPlayer.ModeNames;
             Add("Loot per player: " + names[Mathf.Clamp(NetConfig.LootPerPlayer.Value, 0, 2)], () => NetConfig.LootPerPlayer.Value = (NetConfig.LootPerPlayer.Value + 1) % 3, true,
                 d => NetConfig.LootPerPlayer.Value = (NetConfig.LootPerPlayer.Value + d + 3) % 3);
+        /// <summary>Fights wait for everyone (Classic co-op): the host runs the enemies, so only the host's choice counts.</summary>
+        void AddFightWaitRows()
+        {
+            if (NetSession.Active && !NetSession.IsHost)
+            {
+                Add("Fights wait for everyone: host's choice", null, false);
+                return;
+            }
+            Add("Fights wait for everyone: " + (NetConfig.FightsWaitForAll.Value ? "On" : "Off"), () => NetConfig.FightsWaitForAll.Value = !NetConfig.FightsWaitForAll.Value, true,
+                d => NetConfig.FightsWaitForAll.Value = !NetConfig.FightsWaitForAll.Value);
+            if (NetConfig.FightsWaitForAll.Value)
+                Add("Longest wait: " + NetConfig.FightWaitMax.Value.ToString("0") + " s", null, true,
+                    d => NetConfig.FightWaitMax.Value = Mathf.Clamp(Mathf.Round(NetConfig.FightWaitMax.Value) + d, 1f, 15f));
         }
 
         /// <summary>How many can play: the host picks 2, 3 or 4 (more only by editing the config, experimental).</summary>

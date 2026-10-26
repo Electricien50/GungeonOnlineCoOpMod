@@ -21,6 +21,8 @@ namespace GungeonOnline.Session
         public static ConfigEntry<bool> SecondFightLock;
         public static ConfigEntry<float> PullLockMin, PullLockMax;
         public static ConfigEntry<int> LootPerPlayer;
+        public static ConfigEntry<bool> FightsWaitForAll;
+        public static ConfigEntry<float> FightWaitMax;
         public static ConfigEntry<int> LocatorStyle, NameTagStyle;
         public static ConfigEntry<bool> FriendCrosshair;
         public static ConfigEntry<int> LookFrame, LookSelect, LookTitle, LookToast;
@@ -54,6 +56,8 @@ namespace GungeonOnline.Session
             PullLockMin = c.Bind("Gameplay", "PullLockMinSeconds", 0.4f, new ConfigDescription("After you are moved into a fight, your input is ignored for at least this long (seconds), then until you let go of everything.", new AcceptableValueRange<float>(0f, 2f)));
             PullLockMax = c.Bind("Gameplay", "PullLockMaxSeconds", 1f, new ConfigDescription("After you are moved into a fight, your input is ignored for at most this long (seconds), even if you keep holding a button.", new AcceptableValueRange<float>(0f, 3f)));
             LootPerPlayer = c.Bind("Gameplay", "LootPerPlayerMode", 2, new ConfigDescription("Host only: extra rewards for each player after the first (chests, room clear drops, floor boss pedestals). 0 off, 1 half (each extra player adds a 50% chance of one more), 2 full (one per player).", new AcceptableValueRange<int>(0, 2)));
+            FightsWaitForAll = c.Bind("Gameplay", "FightsWaitForEveryone", true, "Host only, Classic co-op: a room's enemies stand still and cannot be hurt until every living player is in the room.");
+            FightWaitMax = c.Bind("Gameplay", "FightWaitMaxSeconds", 5f, new ConfigDescription("Host only: the longest a fight waits for everyone (seconds), in case someone cannot come.", new AcceptableValueRange<float>(1f, 15f)));
             LocatorStyle = c.Bind("Interface", "LocatorStyle", 5, new ConfigDescription("When your friend is off screen, a marker at the screen edge points to them. 5 pickup tag (default), 1 speech bubble, 0 off.", new AcceptableValueRange<int>(0, 5)));
             CoopStyle = c.Bind("Gameplay", "CoopStyle", 0, new ConfigDescription("Host only. 0 Classic: start a fight and your partner is pulled in, like local co-op. 1 Explore: one fight at a time, nobody pulled.", new AcceptableValueRange<int>(0, 1)));
             var mp = System.Environment.GetEnvironmentVariable("GO_MAX_PLAYERS"); // harness: players in the test
