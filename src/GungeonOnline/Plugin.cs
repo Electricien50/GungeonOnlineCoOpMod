@@ -59,6 +59,7 @@ namespace GungeonOnline
             Session.PauseMenuEntry.Install(harmony);
             Game.BreachDoorGate.Install(harmony);
             Game.RemoteAim.Install(harmony);
+            TryInstall("LootPerPlayer", () => Game.LootPerPlayer.Install(harmony));
             Replication.StatSync.Install(harmony);
             harmony.Patch(AccessTools.Method(typeof(GameManager), nameof(GameManager.DoGameOver)),
                 prefix: new HarmonyMethod(typeof(Plugin), nameof(OnGameOver)));

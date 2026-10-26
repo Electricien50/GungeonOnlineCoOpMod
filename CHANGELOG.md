@@ -9,6 +9,8 @@
 - Guests see the spawn marker (and hear its sounds) before wave enemies appear, like the host. Before, those enemies popped in with no warning on a guest's screen.
 - While that marker plays, the enemy cannot hurt a guest yet. Before, walking over it hit the guest.
 - The spawn marker also covers enemies that arrive as a group, and wave enemies that arrive hidden without a marker stay out of reach on a guest's screen until they show. The marker is timed to the host's, net of half the ping.
+- Rewards scale with the players in the session: each chest holds one more set of contents per extra player, a cleared room drops its reward once more, and a floor boss leaves one more pedestal. Host setting `LootPerPlayerMode`, also under Online menu > Settings > Gameplay: Off, Half (each extra player adds a 50% chance of one more), One per player (default).
+- The extra sets never repeat a gun or item: a chest does not hold the same one twice, and two boss pedestals never show the same one.
 
 ## 1.1.9
 
