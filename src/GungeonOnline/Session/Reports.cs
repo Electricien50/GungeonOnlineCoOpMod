@@ -44,6 +44,10 @@ namespace GungeonOnline.Session
                         + " knock posted=" + Knock.Posted + " polls=" + Knock.Polls + " heard=" + Knock.Heard + " relay failures=" + Knock.Failures);
                 var ck = Replication.Checksum.Instance;
                 if (ck != null) sb.AppendLine($"Sync checks {ck.Checks}, desyncs repaired {ck.Mismatches}, last: {ck.LastMismatch}");
+                var ps = Replication.ProjectileSync.Instance;
+                if (ps != null)
+                    sb.AppendLine($"Enemy bullets: announced {ps.Announced}, corrections {ps.Updates}, copies {ps.Copies}, hit me {ps.EarlyNearMe}, " +
+                        $"stopped by walls {ps.WallStops}, cut short {ps.EarlyDeaths}, unseen hits avoided {ps.GraceSaves}, late corrections dropped {ps.StaleUpdates}, unknown look {ps.UnknownPrefabs}");
                 sb.AppendLine();
                 Append(sb, "Settings", Path.Combine(BepInEx.Paths.ConfigPath, "gungeononline.cfg"), 200);
                 Append(sb, "Desync log", Path.Combine(Path.Combine(BepInEx.Paths.BepInExRootPath, "GungeonOnline"), "desync.log"), 300);

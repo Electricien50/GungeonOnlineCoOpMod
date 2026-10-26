@@ -15,6 +15,13 @@
 - The full map is each player's own: a teleport picked on it moves only that player, not everyone. A friend's map buttons (zoom, pan, pick) no longer act on your map, opening or closing your map no longer stops or frees your friend's hands, and clicks on an open map are no longer fired as shots on the other screens.
 - The full map can take you to a friend: click their marker (or center the map on it and press Interact) to land next to them. Only outside fights, for both of you.
 - The online menu keeps its buttons to itself. Before, while it was open, Start also paused the game, Back opened the Ammonomicon, the keys also moved through the game's own menus underneath, and the menu keys walked or shot your character on the other screens. The press that opens the menu no longer picks its first row.
+- Enemy bullets on a guest's screen:
+  - Where bullets are now goes on its own unreliable channel, batched once a frame. A lost packet no longer holds every later bullet back until it is sent again (bullets arriving late in a burst).
+  - Curving bullets are flown along their turn and speed change, so they need far fewer corrections and jump less. Bullets that curve are refreshed five times a second, in case a correction was lost.
+  - Straight bullets stop at walls on the guest's screen too. Before, a copy flew through walls until the host said it ended, and could hit a guest behind a wall.
+  - A bullet that just appeared, or just jumped to a correction, cannot hit the guest for a tenth of a second: a hit you could not have seen coming.
+  - Bullet names are sent once per guest instead of with every bullet.
+  - Send report lists bullet counters (corrections, walls, unseen hits avoided).
 
 ## 1.1.9
 
