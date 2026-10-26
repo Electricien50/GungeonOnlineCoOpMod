@@ -20,6 +20,7 @@ namespace GungeonOnline.Game
         static readonly System.Reflection.FieldInfo DisableField = AccessTools.Field(typeof(PlayerController), "m_disableInput");
         float nextCheck;
         float blackSince = -1f, arrivalSince = -1f;
+        bool stuckDone;
 
         static void HardFallRescue(PlayerController p)
         {
@@ -110,6 +111,13 @@ namespace GungeonOnline.Game
                 }
             }
             else { fallSince = -1f; fallRescued = false; }
+            // Harness: GO_STUCK_ARRIVAL_AT=seconds leaves an arrival elevator lock on, as a cut-short arrival does.
+            if (Dev.DevEnv.IsHarness && !stuckDone && float.TryParse(System.Environment.GetEnvironmentVariable("GO_STUCK_ARRIVAL_AT"), out var stuckAt) && Time.realtimeSinceStartup >= stuckAt)
+            {
+                stuckDone = true;
+                p.SetInputOverride("elevator arrival");
+                Plugin.Log.LogInfo("InputWatchdog harness: left the arrival elevator lock on");
+            }
             var raw = (PlayerInputState)InputStateField.GetValue(p);
             var dis = DisableField.GetValue(p) as OverridableBool;
             // The arrival elevator locks input and unlocks it from its animation; a dropout or reconnect during that
