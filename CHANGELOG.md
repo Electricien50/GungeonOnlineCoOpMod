@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Classic co-op: a player pulled into a fight lands next to where the host's player stands right now (or the teammate who started it, if the host is elsewhere).
+- A late player who walks up to a sealed fight lands next to the host's player (or the teammate in that fight), instead of in the middle of the room.
+- A player pulled into a fight no longer lands inside a wall, pillar or table: the landing spot is checked against their body, a step away from walls when there is room.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.

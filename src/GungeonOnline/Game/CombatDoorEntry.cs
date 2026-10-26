@@ -39,7 +39,9 @@ namespace GungeonOnline.Game
                 if (q.CurrentRoom == target) { teammate = q; break; }
             // A second fight's empty locked room is still locked. Only admit someone into their teammate's fight.
             if (!teammate) return true;
-            p.WarpToPoint(target.GetCenteredVisibleClearSpot(2, 2).ToVector2(), true);
+            // Next to where the host's player (or else the teammate) stands right now, not the middle of the room.
+            var spot = Camera.IndependentCamera.SafeSpotNear(p, Camera.IndependentCamera.PullAnchor(p, teammate));
+            p.WarpToPoint(spot ?? target.GetCenteredVisibleClearSpot(2, 2).ToVector2(), true);
             p.healthHaver.TriggerInvulnerabilityPeriod();
             Plugin.Log.LogInfo("CombatDoorEntry: slot " + PlayerSlots.SlotOf(p) + " entered " + target.GetRoomName());
             return false;

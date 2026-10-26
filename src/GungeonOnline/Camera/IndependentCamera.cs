@@ -87,13 +87,24 @@ namespace GungeonOnline.Camera
 
         static readonly bool oldPull = Dev.DevEnv.IsHarness && System.Environment.GetEnvironmentVariable("GO_OLD_PULL") == "1";
 
+        /// <summary>The player a pull brings this one to: the host's own player when they are in that fight,
+        /// otherwise the one the game chose.</summary>
+        public static PlayerController PullAnchor(PlayerController me, PlayerController other)
+        {
+            var host = PlayerSlots.Local;
+            if (Session.NetSession.IsHost && host && host != me && other != null && Game.NPlayers.Players.IsLiving(host) && host.CurrentRoom == other.CurrentRoom)
+                return host;
+            return other;
+        }
+
         /// <summary>Vanilla puts the pulled player on the exact spot of the one who walked in, which is often the
-        /// doorway: the door then seals on top of them and they end up in the wall. Land on the nearest clear floor
-        /// inside the room, away from doors, instead.</summary>
+        /// doorway: the door then seals on top of them and they end up in the wall. Land on the clear floor nearest
+        /// to where the host's player stands right now, away from doors, instead.</summary>
         static bool PullSafePrefix(PlayerController __instance, PlayerController other, bool useDefaultVFX)
         {
             if (!Session.NetSession.Active || oldPull || other == null) return true;
-            var to = SafeSpotNear(other);
+            other = PullAnchor(__instance, other);
+            var to = SafeSpotNear(__instance, other);
             Plugin.Log.LogInfo($"PULLSAFE {(to != null ? "to " + to.Value : "none found")} from {(UnityEngine.Vector2)other.transform.position} room={(other.CurrentRoom != null ? other.CurrentRoom.GetRoomName() : "none")}");
             if (to == null) return true;
             __instance.WarpToPoint(to.Value, useDefaultVFX);
@@ -108,17 +119,44 @@ namespace GungeonOnline.Camera
                 !c.doesDamage && !c.IsPlayerInaccessible && !c.containsTrap;
         }
 
-        public static UnityEngine.Vector2? SafeSpotNear(PlayerController other)
+        /// <summary>Clear floor next to <paramref name="other"/> where <paramref name="mover"/> fits.</summary>
+        public static UnityEngine.Vector2? SafeSpotNear(PlayerController mover, PlayerController other) =>
+            SafeSpotNear(mover, other.transform.position, other.CurrentRoom);
+
+        public static UnityEngine.Vector2? SafeSpotNear(PlayerController mover, UnityEngine.Vector2 point, Dungeonator.RoomHandler room)
         {
             var gm = GameManager.Instance;
             if (gm == null || gm.Dungeon == null) return null;
             var d = gm.Dungeon.data;
-            var at = other.transform.position.IntXY(VectorConversions.Floor);
-            // The room the player is walking into first; any floor if that has no clear spot close by.
-            return Search(d, at, other.CurrentRoom) ?? Search(d, at, null);
+            var at = point.ToIntVector2(VectorConversions.Floor);
+            // Floor cells can still hold a wall's collision (a wall face, a pillar) or a placed object, which left
+            // pulled players stuck: test the player's own body there too. Room first, a step back from walls first.
+            return Search(d, at, room, mover, true) ?? Search(d, at, room, mover, false) ?? Search(d, at, room, null, false)
+                ?? Search(d, at, null, mover, false) ?? Search(d, at, null, null, false);
         }
 
-        static UnityEngine.Vector2? Search(Dungeonator.DungeonData d, IntVector2 at, Dungeonator.RoomHandler room)
+        static bool IsWall(Dungeonator.DungeonData d, int x, int y)
+        {
+            if (!d.CheckInBounds(x, y)) return true;
+            var c = d.cellData[x][y];
+            return c == null || c.type == Dungeonator.CellType.WALL || c.IsTopWall();
+        }
+
+        /// <summary>The player's body placed at <paramref name="at"/> touches nothing solid (walls, pillars, tables).</summary>
+        static bool BodyFits(PlayerController p, UnityEngine.Vector2 at)
+        {
+            var rb = p.specRigidbody;
+            if (!rb || PhysicsEngine.Instance == null) return true;
+            try
+            {
+                // Enemies, players, shots and loot do not trap anyone.
+                return !PhysicsEngine.Instance.OverlapCast(rb, null, true, true, null, null, false, at,
+                    o => o.GetComponent<GameActor>() || o.GetComponent<Projectile>() || o.GetComponent<PickupObject>() || o.GetComponent<DebrisObject>());
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning("PULLSAFE body test: " + e.Message); return true; }
+        }
+
+        static UnityEngine.Vector2? Search(Dungeonator.DungeonData d, IntVector2 at, Dungeonator.RoomHandler room, PlayerController mover, bool margin)
         {
             for (int r = 0; r <= 12; r++)
                 for (int dx = -r; dx <= r; dx++)
@@ -133,13 +171,19 @@ namespace GungeonOnline.Camera
                             {
                                 bool foot = i >= 0 && i <= 1 && j >= 0 && j <= 1;
                                 if (foot) ok = Clear(d, x + i, y + j, room);
-                                else if (d.CheckInBounds(x + i, y + j))
+                                else
                                 {
-                                    var c = d.cellData[x + i][y + j];
-                                    if (c != null && (c.isExitCell || c.isDoorFrameCell)) ok = false;
+                                    if (d.CheckInBounds(x + i, y + j))
+                                    {
+                                        var c = d.cellData[x + i][y + j];
+                                        if (c != null && (c.isExitCell || c.isDoorFrameCell)) ok = false;
+                                    }
+                                    // A one cell gap to any wall around the footprint.
+                                    if (ok && margin && i >= -1 && i <= 2 && j >= -1 && j <= 2 && IsWall(d, x + i, y + j)) ok = false;
                                 }
                             }
-                        if (ok) return new UnityEngine.Vector2(x + 0.5f, y + 0.25f);
+                        var spot = new UnityEngine.Vector2(x + 0.5f, y + 0.25f);
+                        if (ok && (mover == null || BodyFits(mover, spot))) return spot;
                     }
             return null;
         }
