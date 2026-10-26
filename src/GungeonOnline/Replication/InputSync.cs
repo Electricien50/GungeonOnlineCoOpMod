@@ -252,6 +252,7 @@ namespace GungeonOnline.Replication
             if (local == null || bi == null) return;
             // While your pause menu is open the stick drives the menu, not your character.
             var f = Game.PauseScope.LocalMenuOpen ? default(InputFrame) : InputPump.Sample(bi.ActiveActions);
+            if (Game.PullLock.Active) { f.Buttons = 0; f.Move = Vector2.zero; } // just moved into a fight: still for a moment
             // Mouse players have no aim stick: send the direction they are actually aiming as stick aim.
             if (!Game.PauseScope.LocalMenuOpen && bi.IsKeyboardAndMouse())
             {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A player pulled into a fight (or let into one late) no longer carries on with what they were doing: a roll in progress stops, and their input is ignored until they let go of everything (0.4 s at least, 1 s at most by default; each player sets their own under Online menu > Settings > Gameplay, "Still after a pull", or `PullLockMinSeconds` / `PullLockMaxSeconds`; a max of 0 turns it off). Before, the walk or roll meant for elsewhere steered them through the fight they had just landed in.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.

@@ -41,6 +41,7 @@ namespace GungeonOnline.Game
             if (!teammate) return true;
             p.WarpToPoint(target.GetCenteredVisibleClearSpot(2, 2).ToVector2(), true);
             p.healthHaver.TriggerInvulnerabilityPeriod();
+            PullLock.Begin(p);
             Plugin.Log.LogInfo("CombatDoorEntry: slot " + PlayerSlots.SlotOf(p) + " entered " + target.GetRoomName());
             return false;
         }

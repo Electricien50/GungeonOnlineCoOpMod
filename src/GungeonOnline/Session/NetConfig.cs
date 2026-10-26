@@ -19,6 +19,7 @@ namespace GungeonOnline.Session
         public static ConfigEntry<KeyCode> OverlayKey;
         public static ConfigEntry<bool> PauseFreezesEveryone;
         public static ConfigEntry<bool> SecondFightLock;
+        public static ConfigEntry<float> PullLockMin, PullLockMax;
         public static ConfigEntry<int> LocatorStyle, NameTagStyle;
         public static ConfigEntry<bool> FriendCrosshair;
         public static ConfigEntry<int> LookFrame, LookSelect, LookTitle, LookToast;
@@ -49,6 +50,8 @@ namespace GungeonOnline.Session
             OverlayKey = c.Bind("Interface", "OverlayKey", KeyCode.F8, "Opens the online menu.");
             PauseFreezesEveryone = c.Bind("Gameplay", "PauseFreezesEveryone", false, "Host only: pausing stops the game for all players.");
             SecondFightLock = c.Bind("Gameplay", "SecondFightLock", true, "While one room is in combat, other uncleared rooms stay shut.");
+            PullLockMin = c.Bind("Gameplay", "PullLockMinSeconds", 0.4f, new ConfigDescription("After you are moved into a fight, your input is ignored for at least this long (seconds), then until you let go of everything.", new AcceptableValueRange<float>(0f, 2f)));
+            PullLockMax = c.Bind("Gameplay", "PullLockMaxSeconds", 1f, new ConfigDescription("After you are moved into a fight, your input is ignored for at most this long (seconds), even if you keep holding a button.", new AcceptableValueRange<float>(0f, 3f)));
             LocatorStyle = c.Bind("Interface", "LocatorStyle", 5, new ConfigDescription("When your friend is off screen, a marker at the screen edge points to them. 5 pickup tag (default), 1 speech bubble, 0 off.", new AcceptableValueRange<int>(0, 5)));
             CoopStyle = c.Bind("Gameplay", "CoopStyle", 0, new ConfigDescription("Host only. 0 Classic: start a fight and your partner is pulled in, like local co-op. 1 Explore: one fight at a time, nobody pulled.", new AcceptableValueRange<int>(0, 1)));
             var mp = System.Environment.GetEnvironmentVariable("GO_MAX_PLAYERS"); // harness: players in the test
