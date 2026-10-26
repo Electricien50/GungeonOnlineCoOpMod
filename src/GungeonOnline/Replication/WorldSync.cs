@@ -686,6 +686,7 @@ namespace GungeonOnline.Replication
                 try
                 {
                     if (data[0] == 45) { if (!NetSession.IsHost && !FloorReady) { earlyEvents.Add(data); return; } InventorySync.Instance?.Apply(ref vr); }
+                    else if (data[0] == Game.MapPing.EvPing) Game.MapPing.Apply(c, ref vr);
                     else VitalsSync.Instance?.Apply(c, data[0], ref vr);
                 }
                 catch (System.Exception e) { Plugin.Log.LogError("Vitals: " + e); }

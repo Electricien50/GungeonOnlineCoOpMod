@@ -19,7 +19,7 @@ namespace GungeonOnline.Replication
     internal sealed class VitalsSync : MonoBehaviour
     {
         public static VitalsSync Instance { get; private set; }
-        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43, EvPitfall = 44, EvFire = 46; // 45 is InventorySync
+        const byte EvHurt = 40, EvVitals = 41, EvPlayerDied = 42, EvPlayerRevived = 43, EvPitfall = 44, EvFire = 46; // 45 is InventorySync, 47 is MapPing
 
         static bool scope;
         static bool IsClient => NetSession.Active && !NetSession.IsHost;

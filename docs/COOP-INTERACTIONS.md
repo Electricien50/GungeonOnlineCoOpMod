@@ -16,7 +16,7 @@ local co-op, so its gameplay result is already correct. What needs netplay-aware
 | Area | Vanilla local co-op | Gungeon Online |
 |---|---|---|
 | Camera | One camera averages both players (`CameraController.GetCoreCurrentBasePosition`) | Each machine follows only its own player (`IgnoredByCamera` on everyone else) |
-| Partner pulled into fights | `HandleCoopSpecificTimers` warps the outside player into a sealed room after 1 s | Off. Doors stay shut for the outside player. Second-fight lock: while a room is sealed, other uncleared rooms do not start |
+| Partner pulled into fights | `HandleCoopSpecificTimers` warps the outside player into a sealed room after 1 s | Host picks the co-op style (`CoopStyle`). **Classic** (default): kept, decided on the host; with 3 or 4 players everyone outside the fight is pulled in. **Explore**: off, doors stay shut for the outside player, and a second-fight lock stops other uncleared rooms from starting while one is sealed |
 | Off-screen clamp | `CameraBoundsMovementRestrictor` blocks movement past the shared camera edge; ghosts are also pushed/warped back | Off (found in M2: it pinned the other player to the edge of each screen) |
 | Pause menu | `GameManager.PauseRaw` sets time scale 0 for the whole world | Opens locally, world keeps running, banner "game is still running". Config option `PauseFreezesEveryone` (default off) |
 | Ammonomicon, map | Local UI | Local UI on the machine that opened it; world keeps running |
