@@ -20,6 +20,7 @@ namespace GungeonOnline.Session
         Props = 6,
         Backup = 7,
         Move = 8,    // host to a player's own game: move your player here (see PlayerSync)
+        Bullets = 9, // host to guests, unreliable: where enemy bullets are now (see ProjectileSync)
     }
 
     /// <summary>

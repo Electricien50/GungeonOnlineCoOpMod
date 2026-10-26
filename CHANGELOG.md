@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Enemy bullets on a guest's screen:
+  - Where bullets are now goes on its own unreliable channel, batched once a frame. A lost packet no longer holds every later bullet back until it is sent again (bullets arriving late in a burst).
+  - Curving bullets are flown along their turn and speed change, so they need far fewer corrections and jump less. Bullets that curve are refreshed five times a second, in case a correction was lost.
+  - Straight bullets stop at walls on the guest's screen too. Before, a copy flew through walls until the host said it ended, and could hit a guest behind a wall.
+  - A bullet that just appeared, or just jumped to a correction, cannot hit the guest for a tenth of a second: a hit you could not have seen coming.
+  - Bullet names are sent once per guest instead of with every bullet.
+  - Send report lists bullet counters (corrections, walls, unseen hits avoided).
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
