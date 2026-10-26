@@ -14,6 +14,7 @@
 - The full map opens and closes only for the player who pressed Map. Before, one player opening it opened it on everyone's screen, and kept it open there while they held the button.
 - The full map is each player's own: a teleport picked on it moves only that player, not everyone. A friend's map buttons (zoom, pan, pick) no longer act on your map, opening or closing your map no longer stops or frees your friend's hands, and clicks on an open map are no longer fired as shots on the other screens.
 - The full map can take you to a friend: click their marker (or center the map on it and press Interact) to land next to them. Only outside fights, for both of you.
+- The online menu keeps its buttons to itself. Before, while it was open, Start also paused the game, Back opened the Ammonomicon, the keys also moved through the game's own menus underneath, and the menu keys walked or shot your character on the other screens. The press that opens the menu no longer picks its first row.
 
 ## 1.1.9
 
