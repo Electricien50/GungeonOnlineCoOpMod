@@ -44,6 +44,8 @@ namespace GungeonOnline.Replication
             public float TargetTime, MovedFor = -1f; // MovedFor: the snapshot the last move used
             public int Clip;
             public bool Jammed;
+            public bool Arriving; // a wave enemy behind its spawn marker: not there yet, nothing touches it
+            public float ArriveBy;
             // Host state that the enemy's own AI would show here: gun aim and the sniper's laser line.
             public bool HasGun, Laser;
             public float GunAngle;
@@ -81,6 +83,8 @@ namespace GungeonOnline.Replication
             h.Patch(AccessTools.Method(typeof(HealthHaver), nameof(HealthHaver.Die)), prefix: new HarmonyMethod(t, nameof(DiePrefix)));
             // Client: enemies that appear on their own (split-on-death, summons) are the host's to spawn.
             h.Patch(AccessTools.Method(typeof(AIActor), "Start"), prefix: new HarmonyMethod(t, nameof(ActorStartPrefix)));
+            // Host: wave enemies show a spawn marker before they appear; the guest's copies show it too.
+            h.Patch(AccessTools.Method(typeof(AIActor), nameof(AIActor.HandleReinforcementFallIntoRoom)), prefix: new HarmonyMethod(t, nameof(ReinforcePrefix)));
             // A copy of a host's wall mimic is placed where the host's one is; marking the wall cells there can fail.
             // The copy's own AI never runs, so it needs none of that: the copy is kept instead of failing the spawn.
             h.Patch(AccessTools.Method(typeof(WallMimicController), nameof(WallMimicController.ConfigureOnPlacement)), finalizer: new HarmonyMethod(t, nameof(CopyPlacementFinalizer)));
@@ -123,7 +127,7 @@ namespace GungeonOnline.Replication
 
         void Reset()
         {
-            ready.Clear(); deathSent.Clear(); lastSent.Clear(); replicas.Clear(); earlyEvents.Clear(); jammedSent.Clear(); reaperSent = reaperWanted = false;
+            ready.Clear(); deathSent.Clear(); lastSent.Clear(); replicas.Clear(); earlyEvents.Clear(); jammedSent.Clear(); reinforcing.Clear(); reaperSent = reaperWanted = false;
             FloorReady = false; lastSnapSeq = 0;
             NetIds.Clear();
             modEnemyPrefabs.Clear();
@@ -159,6 +163,34 @@ namespace GungeonOnline.Replication
             Instance.LocalActorsSuppressed++;
             __instance.EraseFromExistence(true);
             return false;
+        }
+
+        // Host: wave enemies whose arrival has not been sent yet: when their spawn marker shows, and how they arrive.
+        struct Arrival { public float At; public byte Kind; }
+        const byte ArriveMarker = 0, ArriveHidden = 1; // the game's FullVfx (marker, then a poof) and SkipVfx (just hidden)
+        static readonly Dictionary<AIActor, Arrival> reinforcing = new Dictionary<AIActor, Arrival>();
+
+        static void ReinforcePrefix(AIActor __instance, float delay)
+        {
+            if (!IsHostSession || !__instance) return;
+            // The cases in which the game hides the enemy while it arrives. Instant ones are there at once; an enemy
+            // with its own arrival (CustomReinforceDoer) shows it with its own animations, which the snapshots carry.
+            if (__instance.reinforceType == AIActor.ReinforceType.Instant || __instance.GetComponent<CustomReinforceDoer>()) return;
+            reinforcing[__instance] = new Arrival
+            {
+                At = Time.realtimeSinceStartup + delay,
+                Kind = __instance.reinforceType == AIActor.ReinforceType.FullVfx ? ArriveMarker : ArriveHidden,
+            };
+        }
+
+        /// <summary>Host: seconds until this enemy's spawn marker shows, or -1 if it has no arrival to send.</summary>
+        static float TakeReinforce(AIActor a, out byte kind)
+        {
+            kind = ArriveMarker;
+            if (!reinforcing.TryGetValue(a, out var arr)) return -1f;
+            reinforcing.Remove(a);
+            kind = arr.Kind;
+            return Mathf.Max(0f, arr.At - Time.realtimeSinceStartup);
         }
 
         static void SealPostfix(RoomHandler __instance) { if (IsHostSession) Instance.SendRoomSeal(__instance, true); }
@@ -297,7 +329,7 @@ namespace GungeonOnline.Replication
             return gw.ToArray();
         }
 
-        byte[] SpawnMessage(uint id, AIActor a)
+        byte[] SpawnMessage(uint id, AIActor a, float reinforce = -1f, byte arriveKind = ArriveMarker)
         {
             var ownerT = NamedAncestor(a);
             uint ownerId = ownerT != null ? IdOf(ownerT) : 0;
@@ -309,6 +341,8 @@ namespace GungeonOnline.Replication
                 var pw = new WireWriter(64);
                 pw.U8(EvSpawnPart); pw.U32(id); pw.U32(ownerId); pw.Str(a.EnemyGuid ?? "");
                 pw.U8((byte)path.Count); foreach (var b in path) pw.U8(b);
+                // A member of a wave group arrives behind its own marker too. Older guests stop reading before this.
+                if (reinforce >= 0f) { pw.F32(reinforce); pw.U8(arriveKind); }
                 return pw.ToArray();
             }
             var ww = new WireWriter(96);
@@ -317,6 +351,7 @@ namespace GungeonOnline.Replication
             ww.F32(p.x); ww.F32(p.y);
             ww.I16((short)RoomIndex(a.ParentRoom));
             ww.Bool(a.IsBlackPhantom);
+            if (reinforce >= 0f) { ww.F32(reinforce); ww.U8(arriveKind); } // older guests stop reading before this
             return ww.ToArray();
         }
 
@@ -343,10 +378,17 @@ namespace GungeonOnline.Replication
                     }
                 }
                 uint id = NetIds.Assign(a);
-                var msg = SpawnMessage(id, a);
+                float reinforce = TakeReinforce(a, out var arriveKind);
+                var msg = SpawnMessage(id, a, reinforce, arriveKind);
                 if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNSEND {id} {a.EnemyGuid} ready={ready.Count} t={Time.realtimeSinceStartup:F2}");
                 foreach (var c in ready) c.Send((byte)Channel.Event, msg, Delivery.ReliableOrdered);
                 SpawnsSent++;
+            }
+            if (reinforcing.Count > 32)
+            {
+                var gone = new List<AIActor>();
+                foreach (var kv in reinforcing) if (!kv.Key) gone.Add(kv.Key);
+                foreach (var g in gone) reinforcing.Remove(g);
             }
             // Destroyed actors
             foreach (var id in NetIds.Dead())
@@ -531,6 +573,7 @@ namespace GungeonOnline.Replication
                     a.HasBeenEngaged = true;
                 bool hidden = (flags & FlagHidden) != 0;
                 if (a.sprite != null && a.sprite.renderer != null && a.sprite.renderer.enabled == hidden) a.ToggleRenderers(!hidden);
+                if (rep.Arriving && (!hidden || Time.realtimeSinceStartup > rep.ArriveBy)) { rep.Arriving = false; SetArriving(a, false); }
             }
             catch (System.Exception e) { Plugin.Log.LogWarning($"WorldSync: could not show {a.name}: {e.Message}"); }
             rep.HasGun = (flags & FlagGun) != 0;
@@ -819,6 +862,8 @@ namespace GungeonOnline.Replication
             var pos = new Vector2(r.F32(), r.F32());
             var room = RoomAt(r.I16()) ?? pos.GetAbsoluteRoom();
             bool jammed = r.Remaining > 0 && r.Bool();
+            float reinforce = r.Remaining >= 4 ? r.F32() : -1f;
+            byte arriveKind = r.Remaining >= 1 ? r.U8() : ArriveMarker;
             if (replicas.ContainsKey(id)) return;
             if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNRECV {id} {guid} t={Time.realtimeSinceStartup:F2}");
             var prefab = EnemyPrefab(guid);
@@ -829,11 +874,82 @@ namespace GungeonOnline.Replication
             MakeReplica(a);
             NetIds.Bind(id, a);
             if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNAPPLY {id} t={Time.realtimeSinceStartup:F2}");
-            replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup, Jammed = jammed };
+            var made = replicas[id] = new Replica { Actor = a, Target = pos, TargetTime = Time.realtimeSinceStartup, Jammed = jammed };
             SetJammed(a, jammed);
+            if (reinforce >= 0f) BeginArrival(made, reinforce, arriveKind);
             SpawnsApplied++;
             if (Dev.DevEnv.IsHarness && modEnemyPrefabs.ContainsKey(guid))
                 Plugin.Log.LogInfo($"MODREPLICA {guid} active={a.gameObject.activeInHierarchy} drawn={(a.sprite && a.sprite.renderer && a.sprite.renderer.enabled)}");
+        }
+
+        /// <summary>
+        /// Client: a wave enemy arrives. Hidden and out of reach until the host's enemy shows (its snapshots say when),
+        /// as the host's is: otherwise this player is hit by touching an enemy that is not there yet. The game's marker
+        /// plays meanwhile, timed from the host's: the message took about half a round trip to get here.
+        /// </summary>
+        void BeginArrival(Replica made, float delay, byte kind)
+        {
+            var a = made.Actor;
+            delay = Mathf.Max(0f, delay - HostOneWaySeconds());
+            made.Arriving = true;
+            // Never stuck out of reach: the game's whole arrival is the delay, the marker (1.5 s at most) and a beat.
+            made.ArriveBy = Time.realtimeSinceStartup + delay + 3f;
+            SetArriving(a, true);
+            if (kind == ArriveMarker) StartCoroutine(SpawnMarker(a, delay));
+        }
+
+        static float HostOneWaySeconds()
+        {
+            var node = NetSession.Instance != null ? NetSession.Instance.Node : null;
+            if (node == null) return 0f;
+            foreach (var c in node.Connections) if (c.Slot == 0) return Mathf.Clamp(c.RttMs, 0f, 400f) / 2000f;
+            return 0f;
+        }
+
+        /// <summary>Client: what the game does to a wave enemy while its spawn marker plays, and undoes once it shows.</summary>
+        static void SetArriving(AIActor a, bool arriving)
+        {
+            if (arriving) a.ToggleRenderers(false);
+            if (a.specRigidbody) a.specRigidbody.CollideWithOthers = !arriving;
+            a.IsGone = arriving;
+            if (a.knockbackDoer) a.knockbackDoer.SetImmobile(arriving, "awaken");
+        }
+
+        /// <summary>Client: the game's wave-spawn marker and sounds at a copy, timed like the host's enemy.</summary>
+        static System.Collections.IEnumerator SpawnMarker(AIActor a, float delay)
+        {
+            float end = Time.realtimeSinceStartup + delay;
+            while (Time.realtimeSinceStartup < end) yield return null;
+            if (!a || !a.sprite || a.healthHaver == null || a.healthHaver.IsDead) yield break;
+            float duration = 1.5f;
+            bool shown = false;
+            try
+            {
+                var reticle = ((GameObject)Instantiate(ResourceCache.Acquire("Global VFX/VFX_SpawnEnemy_Reticle"))).GetComponent<tk2dBaseSprite>();
+                reticle.transform.position = a.transform.position + a.sprite.GetRelativePositionFromAnchor(tk2dBaseSprite.Anchor.LowerCenter).ToVector3ZUp();
+                reticle.HeightOffGround = -1.5f;
+                reticle.UpdateZDepth();
+                var anim = reticle.GetComponent<tk2dSpriteAnimator>();
+                if (anim && anim.DefaultClip != null) duration = anim.DefaultClip.frames.Length / anim.DefaultClip.fps;
+                AkSoundEngine.PostEvent(string.IsNullOrEmpty(a.OverrideSpawnReticleAudio) ? "Play_ENM_spawn_reticle_01" : a.OverrideSpawnReticleAudio, a.gameObject);
+                shown = true;
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning("WorldSync: spawn marker: " + e.Message); }
+            if (!shown) yield break;
+            end = Time.realtimeSinceStartup + duration;
+            while (Time.realtimeSinceStartup < end) yield return null;
+            if (!a || !a.specRigidbody || a.healthHaver == null || a.healthHaver.IsDead) yield break;
+            try
+            {
+                var poof = (GameObject)Instantiate(ResourceCache.Acquire("Global VFX/VFX_Bullet_Spawn"));
+                poof.transform.localScale = new Vector3(Mathf.Sign(Random.value - 0.5f), Mathf.Sign(Random.value - 0.5f), 1f);
+                var s = poof.GetComponent<tk2dBaseSprite>();
+                s.transform.position = a.specRigidbody.UnitCenter;
+                s.HeightOffGround = 0.5f;
+                s.UpdateZDepth();
+                AkSoundEngine.PostEvent(string.IsNullOrEmpty(a.OverrideSpawnAppearAudio) ? "Play_ENM_spawn_appear_01" : a.OverrideSpawnAppearAudio, a.gameObject);
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning("WorldSync: spawn poof: " + e.Message); }
         }
 
         void ApplySpawnPart(ref WireReader r)
@@ -859,7 +975,8 @@ namespace GungeonOnline.Replication
             }
             MakeReplica(a);
             NetIds.Bind(id, a);
-            replicas[id] = new Replica { Actor = a, Target = a.transform.position, TargetTime = Time.realtimeSinceStartup };
+            var made = replicas[id] = new Replica { Actor = a, Target = a.transform.position, TargetTime = Time.realtimeSinceStartup };
+            if (r.Remaining >= 5) BeginArrival(made, r.F32(), r.U8());
             SpawnsApplied++;
             if (Dev.DevEnv.IsHarness) Plugin.Log.LogInfo($"SPAWNPART {id} {a.name} of {ownerId}");
         }

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Guests see the spawn marker (and hear its sounds) before wave enemies appear, like the host. Before, those enemies popped in with no warning on a guest's screen.
+- While that marker plays, the enemy cannot hurt a guest yet. Before, walking over it hit the guest.
+- The spawn marker also covers enemies that arrive as a group, and wave enemies that arrive hidden without a marker stay out of reach on a guest's screen until they show. The marker is timed to the host's, net of half the ping.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
