@@ -141,7 +141,11 @@ namespace GungeonOnline.Replication
             return false;
         }
 
-        static bool SealPrefix() => !IsClient || ApplyingHost;
+        /// <summary>Client: rooms seal and open only on the host's word. Not on side effects of other host events: an
+        /// enemy erased or killed while applying the host's message made the game open its room here ("room cleared")
+        /// while the host still had it shut (one of SecondFightLock's held rooms), until the checksum repaired it.</summary>
+        static bool SealPrefix() => !IsClient || applyingSeal;
+        static bool applyingSeal;
 
         static bool ActorStartPrefix(AIActor __instance)
         {
@@ -794,7 +798,12 @@ namespace GungeonOnline.Replication
                         {
                             var room = RoomAt(r.I16());
                             bool s = r.Bool();
-                            if (room != null) { if (s) room.SealRoom(); else room.UnsealRoom(); }
+                            if (room != null)
+                            {
+                                applyingSeal = true;
+                                try { if (s) room.SealRoom(); else room.UnsealRoom(); }
+                                finally { applyingSeal = false; }
+                            }
                             break;
                         }
                 }
