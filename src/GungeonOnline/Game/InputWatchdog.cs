@@ -19,7 +19,7 @@ namespace GungeonOnline.Game
         static readonly System.Reflection.FieldInfo InputStateField = AccessTools.Field(typeof(PlayerController), "m_inputState");
         static readonly System.Reflection.FieldInfo DisableField = AccessTools.Field(typeof(PlayerController), "m_disableInput");
         float nextCheck;
-        float blackSince = -1f;
+        float blackSince = -1f, arrivalSince = -1f;
 
         static void HardFallRescue(PlayerController p)
         {
@@ -83,7 +83,7 @@ namespace GungeonOnline.Game
             if (!NetSession.Active || !GameManager.HasInstance) { since = -1f; return; }
             var gm = GameManager.Instance;
             var p = PlayerSlots.Local;
-            if (p == null || gm.IsLoadingLevel || gm.IsPaused || OnlineMenu.IsOpen) { since = -1f; blackSince = -1f; return; }
+            if (p == null || gm.IsLoadingLevel || gm.IsPaused || OnlineMenu.IsOpen) { since = -1f; blackSince = -1f; arrivalSince = -1f; return; }
             CheckBlackScreen(p, gm); // the Breach too
             if (SceneObjects.InBreach) { since = -1f; return; }
             // A fall that never finishes (its coroutine was cut short) gets the game's own pit respawn after 10 s.
@@ -112,6 +112,25 @@ namespace GungeonOnline.Game
             else { fallSince = -1f; fallRescued = false; }
             var raw = (PlayerInputState)InputStateField.GetValue(p);
             var dis = DisableField.GetValue(p) as OverridableBool;
+            // The arrival elevator locks input and unlocks it from its animation; a dropout or reconnect during that
+            // animation can cut it short and leave the lock on for the rest of the run. The animation takes about
+            // 2 s, so 12 s after the floor finished loading the lock is stale: lift that one lock, nothing else.
+            if (dis != null && dis.HasOverride("elevator arrival"))
+            {
+                if (arrivalSince < 0) arrivalSince = Time.realtimeSinceStartup;
+                else if (Time.realtimeSinceStartup - arrivalSince > 12f)
+                {
+                    arrivalSince = -1f;
+                    p.ClearInputOverride("elevator arrival");
+                    p.ToggleGunRenderers(true, string.Empty);
+                    p.ToggleHandRenderers(true, string.Empty);
+                    p.ToggleShadowVisiblity(true);
+                    p.ToggleFollowerRenderers(true);
+                    Restores++;
+                    Plugin.Log.LogWarning("InputWatchdog: the arrival elevator never let you out, gave control back");
+                }
+            }
+            else arrivalSince = -1f;
             bool locked = dis != null && dis.Value;
             bool held = locked || p.IsFalling || p.currentMineCart || p.IsGhost || p.healthHaver.IsDead
                         || BossKillCam.BossDeathCamRunning || gm.PreventPausing || p.IsInMinecart;
