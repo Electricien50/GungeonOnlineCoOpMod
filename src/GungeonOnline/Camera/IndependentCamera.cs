@@ -195,6 +195,7 @@ namespace GungeonOnline.Camera
         {
             if (!Session.NetSession.Active) return;
             Pulls++;
+            PullLock.Begin(__instance); // the host's own player (a guest's locks when the move reaches it)
             Plugin.Log.LogInfo($"PULL {(Game.PlayerSlots.IsRemote(__instance) ? "guest" : "host")} into {(other != null && other.CurrentRoom != null ? other.CurrentRoom.GetRoomName() : "?")} ghost={__instance.IsGhost}");
             if (Dev.DevEnv.IsHarness) __instance.StartCoroutine(CheckLanding(__instance));
         }

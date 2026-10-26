@@ -43,6 +43,7 @@ namespace GungeonOnline.Game
             var spot = Camera.IndependentCamera.SafeSpotNear(p, Camera.IndependentCamera.PullAnchor(p, teammate));
             p.WarpToPoint(spot ?? target.GetCenteredVisibleClearSpot(2, 2).ToVector2(), true);
             p.healthHaver.TriggerInvulnerabilityPeriod();
+            PullLock.Begin(p);
             Plugin.Log.LogInfo("CombatDoorEntry: slot " + PlayerSlots.SlotOf(p) + " entered " + target.GetRoomName());
             return false;
         }

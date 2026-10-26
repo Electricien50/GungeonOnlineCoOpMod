@@ -256,6 +256,7 @@ namespace GungeonOnline.Replication
             if (!me || me.specRigidbody == null || GameManager.Instance.IsLoadingLevel || me.IsFalling) return;
             hasPendingMove = false;
             me.WarpToPoint(pendingMove);
+            Game.PullLock.Begin(me); // what we were holding was meant for where we were
             InputSync.Instance.MoveEpoch = pendingEpoch; // frames from now on show the move
             MovesApplied++;
             Plugin.Log.LogInfo($"MOVED by the host to {pendingMove.x:F2},{pendingMove.y:F2} (epoch {pendingEpoch})");

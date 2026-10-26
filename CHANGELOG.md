@@ -5,6 +5,7 @@
 - Classic co-op: a player pulled into a fight lands next to where the host's player stands right now (or the teammate who started it, if the host is elsewhere).
 - A late player who walks up to a sealed fight lands next to the host's player (or the teammate in that fight), instead of in the middle of the room.
 - A player pulled into a fight no longer lands inside a wall, pillar or table: the landing spot is checked against their body, a step away from walls when there is room.
+- A player pulled into a fight (or let into one late) no longer carries on with what they were doing: a roll in progress stops, and their input is ignored until they let go of everything (0.4 s at least, 1 s at most by default; each player sets their own under Online menu > Settings > Gameplay, "Still after a pull", or `PullLockMinSeconds` / `PullLockMaxSeconds`; a max of 0 turns it off). Before, the walk or roll meant for elsewhere steered them through the fight they had just landed in.
 
 ## 1.1.9
 

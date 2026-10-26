@@ -267,6 +267,11 @@ namespace GungeonOnline.Session
                     AddStyleRow();
                     Add("Pausing stops everyone: " + (NetConfig.PauseFreezesEveryone.Value ? "On" : "Off"), () => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value, true,
                         d => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value);
+                    // Your own: how long your input is ignored after you are moved into a fight.
+                    Add("Still after a pull, min: " + NetConfig.PullLockMin.Value.ToString("0.0") + " s", null, true,
+                        d => NetConfig.PullLockMin.Value = Mathf.Clamp(Mathf.Round((NetConfig.PullLockMin.Value + d * 0.1f) * 10f) / 10f, 0f, 2f));
+                    Add("Still after a pull, max: " + NetConfig.PullLockMax.Value.ToString("0.0") + " s", null, true,
+                        d => NetConfig.PullLockMax.Value = Mathf.Clamp(Mathf.Round((NetConfig.PullLockMax.Value + d * 0.1f) * 10f) / 10f, 0f, 3f));
                     Add("Back", Back);
                     break;
                 case Screen.SetFriend:
@@ -321,6 +326,8 @@ namespace GungeonOnline.Session
                         NetConfig.CorrectionSpeed.Value = (float)NetConfig.CorrectionSpeed.DefaultValue;
                         NetConfig.CoopStyle.Value = (int)NetConfig.CoopStyle.DefaultValue;
                         NetConfig.PauseFreezesEveryone.Value = (bool)NetConfig.PauseFreezesEveryone.DefaultValue;
+                        NetConfig.PullLockMin.Value = (float)NetConfig.PullLockMin.DefaultValue;
+                        NetConfig.PullLockMax.Value = (float)NetConfig.PullLockMax.DefaultValue;
                         NetConfig.LocatorStyle.Value = (int)NetConfig.LocatorStyle.DefaultValue;
                         NetConfig.NameTagStyle.Value = (int)NetConfig.NameTagStyle.DefaultValue;
                         NetConfig.NameColor.Value = (int)NetConfig.NameColor.DefaultValue;
