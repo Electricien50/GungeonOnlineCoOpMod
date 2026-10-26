@@ -14,7 +14,7 @@
 
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/version-1.0_beta-e2412c">
-  <img alt="Players" src="https://img.shields.io/badge/players-2_online-f2a33a">
+  <img alt="Players" src="https://img.shields.io/badge/players-4_online-f2a33a">
   <img alt="Stores" src="https://img.shields.io/badge/Steam_%7C_GOG_%7C_Epic-cross--play-4c8bf5">
   <img alt="Loader" src="https://img.shields.io/badge/BepInEx-5.4-6e40c9">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-3fb950">
