@@ -19,8 +19,8 @@ namespace GungeonOnline.Session
         public static ConfigEntry<KeyCode> OverlayKey;
         public static ConfigEntry<bool> PauseFreezesEveryone;
         public static ConfigEntry<bool> SecondFightLock;
-        public static ConfigEntry<float> PullLockMin, PullLockMax;
         public static ConfigEntry<int> LootPerPlayer;
+        public static ConfigEntry<float> PullLockMin, PullLockMax;
         public static ConfigEntry<bool> FightsWaitForAll;
         public static ConfigEntry<float> FightWaitMax;
         public static ConfigEntry<int> LocatorStyle, NameTagStyle;
@@ -53,9 +53,9 @@ namespace GungeonOnline.Session
             OverlayKey = c.Bind("Interface", "OverlayKey", KeyCode.F8, "Opens the online menu.");
             PauseFreezesEveryone = c.Bind("Gameplay", "PauseFreezesEveryone", false, "Host only: pausing stops the game for all players.");
             SecondFightLock = c.Bind("Gameplay", "SecondFightLock", true, "While one room is in combat, other uncleared rooms stay shut.");
+            LootPerPlayer = c.Bind("Gameplay", "LootPerPlayerMode", 2, new ConfigDescription("Host only: extra rewards for each player after the first (chests, room clear drops, floor boss pedestals). 0 off, 1 half (each extra player adds a 50% chance of one more), 2 full (one per player).", new AcceptableValueRange<int>(0, 2)));
             PullLockMin = c.Bind("Gameplay", "PullLockMinSeconds", 0.4f, new ConfigDescription("After you are moved into a fight, your input is ignored for at least this long (seconds), then until you let go of everything.", new AcceptableValueRange<float>(0f, 2f)));
             PullLockMax = c.Bind("Gameplay", "PullLockMaxSeconds", 1f, new ConfigDescription("After you are moved into a fight, your input is ignored for at most this long (seconds), even if you keep holding a button.", new AcceptableValueRange<float>(0f, 3f)));
-            LootPerPlayer = c.Bind("Gameplay", "LootPerPlayerMode", 2, new ConfigDescription("Host only: extra rewards for each player after the first (chests, room clear drops, floor boss pedestals). 0 off, 1 half (each extra player adds a 50% chance of one more), 2 full (one per player).", new AcceptableValueRange<int>(0, 2)));
             FightsWaitForAll = c.Bind("Gameplay", "FightsWaitForEveryone", true, "Host only, Classic co-op: a room's enemies stand still and cannot be hurt until every living player is in the room.");
             FightWaitMax = c.Bind("Gameplay", "FightWaitMaxSeconds", 5f, new ConfigDescription("Host only: the longest a fight waits for everyone (seconds), in case someone cannot come.", new AcceptableValueRange<float>(1f, 15f)));
             LocatorStyle = c.Bind("Interface", "LocatorStyle", 5, new ConfigDescription("When your friend is off screen, a marker at the screen edge points to them. 5 pickup tag (default), 1 speech bubble, 0 off.", new AcceptableValueRange<int>(0, 5)));

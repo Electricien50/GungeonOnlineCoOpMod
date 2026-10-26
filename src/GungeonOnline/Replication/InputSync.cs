@@ -252,11 +252,11 @@ namespace GungeonOnline.Replication
             if (local == null || bi == null) return;
             // While your pause menu is open the stick drives the menu, not your character.
             var f = Game.PauseScope.LocalMenuOpen ? default(InputFrame) : InputPump.Sample(bi.ActiveActions);
-            if (Game.PullLock.Active) { f.Buttons = 0; f.Move = Vector2.zero; } // just moved into a fight: still for a moment
             // The map is this machine's own: its buttons stay here. While it is open your character only walks (as in
             // the game), so clicks and presses on the map are not shots or rolls on the other screens.
             f.Set(NetButton.Map, false); f.Set(NetButton.MinimapZoomIn, false); f.Set(NetButton.MinimapZoomOut, false);
             if (Game.LocalMap.Open) f.Buttons = 0;
+            if (Game.PullLock.Active) { f.Buttons = 0; f.Move = Vector2.zero; } // just moved into a fight: still for a moment
             // Mouse players have no aim stick: send the direction they are actually aiming as stick aim.
             if (!Game.PauseScope.LocalMenuOpen && bi.IsKeyboardAndMouse())
             {
