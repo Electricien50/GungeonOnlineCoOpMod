@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Classic co-op: a fight waits for everyone. Until every living player is in the room (plus half a second to land), its enemies stand still and cannot be hurt, and waves that appear meanwhile wait too; then the fight starts for everyone at once. Never longer than 5 s (in case someone cannot come). Boss rooms keep their own intro. Host settings under Online menu > Settings > Gameplay: "Fights wait for everyone" (on by default) and "Longest wait" (1 to 15 s), or `FightsWaitForEveryone` / `FightWaitMaxSeconds`.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.

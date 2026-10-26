@@ -73,6 +73,7 @@ namespace GungeonOnline
             gameObject.AddComponent<Session.OnlineMenu>();
             gameObject.AddComponent<Session.RunBackup>();
             gameObject.AddComponent<Game.AwayGuard>();
+            gameObject.AddComponent<Game.CombatHold>();
             gameObject.AddComponent<Session.Lobby>();
             gameObject.AddComponent<Replication.InputSync>();
             gameObject.AddComponent<Replication.PlayerSync>();
