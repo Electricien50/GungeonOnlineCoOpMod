@@ -267,6 +267,7 @@ namespace GungeonOnline.Session
                     AddStyleRow();
                     Add("Pausing stops everyone: " + (NetConfig.PauseFreezesEveryone.Value ? "On" : "Off"), () => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value, true,
                         d => NetConfig.PauseFreezesEveryone.Value = !NetConfig.PauseFreezesEveryone.Value);
+                    AddLootRow();
                     Add("Back", Back);
                     break;
                 case Screen.SetFriend:
@@ -321,6 +322,7 @@ namespace GungeonOnline.Session
                         NetConfig.CorrectionSpeed.Value = (float)NetConfig.CorrectionSpeed.DefaultValue;
                         NetConfig.CoopStyle.Value = (int)NetConfig.CoopStyle.DefaultValue;
                         NetConfig.PauseFreezesEveryone.Value = (bool)NetConfig.PauseFreezesEveryone.DefaultValue;
+                        NetConfig.LootPerPlayer.Value = (int)NetConfig.LootPerPlayer.DefaultValue;
                         NetConfig.LocatorStyle.Value = (int)NetConfig.LocatorStyle.DefaultValue;
                         NetConfig.NameTagStyle.Value = (int)NetConfig.NameTagStyle.DefaultValue;
                         NetConfig.NameColor.Value = (int)NetConfig.NameColor.DefaultValue;
@@ -646,6 +648,19 @@ namespace GungeonOnline.Session
             Add("Co-op style: " + StyleNames[NetConfig.CoopStyle.Value], () => NetConfig.CoopStyle.Value = (NetConfig.CoopStyle.Value + 1) % 2, true,
                 d => NetConfig.CoopStyle.Value = (NetConfig.CoopStyle.Value + d + 2) % 2);
         }
+        /// <summary>Extra loot per player: the host's game drops it, so only the host's choice counts.</summary>
+        void AddLootRow()
+        {
+            if (NetSession.Active && !NetSession.IsHost)
+            {
+                Add("Loot per player: host's choice", null, false);
+                return;
+            }
+            var names = Game.LootPerPlayer.ModeNames;
+            Add("Loot per player: " + names[Mathf.Clamp(NetConfig.LootPerPlayer.Value, 0, 2)], () => NetConfig.LootPerPlayer.Value = (NetConfig.LootPerPlayer.Value + 1) % 3, true,
+                d => NetConfig.LootPerPlayer.Value = (NetConfig.LootPerPlayer.Value + d + 3) % 3);
+        }
+
         /// <summary>How many can play: the host picks 2, 3 or 4 (more only by editing the config, experimental).</summary>
         void AddCountRow()
         {

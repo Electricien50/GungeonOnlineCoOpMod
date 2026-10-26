@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Rewards scale with the players in the session: each chest holds one more set of contents per extra player, a cleared room drops its reward once more, and a floor boss leaves one more pedestal. Host setting `LootPerPlayerMode`, also under Online menu > Settings > Gameplay: Off, Half (each extra player adds a 50% chance of one more), One per player (default).
+- The extra sets never repeat a gun or item: a chest does not hold the same one twice, and two boss pedestals never show the same one.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
