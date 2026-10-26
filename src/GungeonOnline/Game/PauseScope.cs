@@ -57,7 +57,8 @@ namespace GungeonOnline.Game
             return p == PlayerSlots.Local;
         }
 
-        /// <summary>True while this machine has its pause menu open in a session (used to send neutral input).</summary>
-        public static bool LocalMenuOpen => Session.NetSession.Active && GameManager.HasInstance && GameManager.Instance.IsPaused;
+        /// <summary>True while this machine has its pause menu or the online menu open in a session (used to send
+        /// neutral input: moving through a menu must not walk or shoot your character on the other screens).</summary>
+        public static bool LocalMenuOpen => Session.NetSession.Active && (Session.OnlineMenu.IsOpen || GameManager.HasInstance && GameManager.Instance.IsPaused);
     }
 }

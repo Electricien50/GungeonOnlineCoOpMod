@@ -38,16 +38,63 @@ namespace GungeonOnline.Session
         bool overrideSet;
         string info;   // one line under the title
 
-        void Awake() { Instance = this; }
+        int openedFrame = -1;
+        readonly List<dfInputManager> blockedUi = new List<dfInputManager>();
+
+        void Awake()
+        {
+            Instance = this;
+            Input.InputPump.AfterPoll += SilenceGame;
+        }
+
+        /// <summary>
+        /// Right after the game reads the controllers: while this menu is open its buttons are ours. The game's own
+        /// actions read as released (a button pressed here stays silent there until it is let go), so Start does not
+        /// pause, Back does not open the Ammonomicon, and B, A or the d-pad do not move through a game menu underneath.
+        /// </summary>
+        void SilenceGame()
+        {
+            if (!open) return;
+            var me = Game.PlayerSlots.Local;
+            Silence(BraveInput.PrimaryPlayerInstance);
+            Silence(BraveInput.PlayerlessInstance);
+            if (me) Silence(BraveInput.GetInstanceForPlayer(me.PlayerIDX));
+        }
+
+        static void Silence(BraveInput bi)
+        {
+            var actions = bi != null ? bi.ActiveActions : null;
+            if (actions == null || actions.Device is Input.NetInputDevice) return; // a friend's copy, not this machine's buttons
+            var list = actions.Actions;
+            for (int i = 0; i < list.Count; i++) list[i].Suppress();
+        }
+
+        /// <summary>The game's own menus (title screen, pause menu) also read the keyboard and mouse: not while ours is up.</summary>
+        void BlockGameUi(bool on)
+        {
+            if (on)
+            {
+                foreach (var m in UnityEngine.Object.FindObjectsOfType<dfInputManager>())
+                    if (m && m.enabled) { m.enabled = false; blockedUi.Add(m); }
+            }
+            else
+            {
+                foreach (var m in blockedUi) if (m) m.enabled = true;
+                blockedUi.Clear();
+            }
+        }
 
         public void Open()
         {
             if (open) return;
             open = true;
+            openedFrame = Time.frameCount;
             sel = 0;
             screen = NetSession.Active ? Screen.Session : Screen.Home;
             if (GameManager.HasInstance && GameManager.Instance.IsPaused) GameManager.Instance.Unpause();
             SetInputLock(true);
+            SilenceGame();
+            BlockGameUi(true);
         }
 
         /// <summary>Harness: open a given screen with a given row selected (UI tour screenshots).</summary>
@@ -74,6 +121,8 @@ namespace GungeonOnline.Session
             open = false;
             typing = false;
             SetInputLock(false);
+            SilenceGame();
+            BlockGameUi(false);
         }
 
         void SetInputLock(bool on)
@@ -123,6 +172,7 @@ namespace GungeonOnline.Session
             SetInputLock(true);
             Rebuild();
             if (typing) return; // keyboard text field has focus
+            if (Time.frameCount == openedFrame) return; // the press that opened the menu does not also pick a row
 
             int dir = 0;
             foreach (var d in RealDevices())

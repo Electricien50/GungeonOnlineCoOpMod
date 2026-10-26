@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The online menu keeps its buttons to itself. Before, while it was open, Start also paused the game, Back opened the Ammonomicon, the keys also moved through the game's own menus underneath, and the menu keys walked or shot your character on the other screens. The press that opens the menu no longer picks its first row.
+
 ## 1.1.9
 
 - Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
