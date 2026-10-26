@@ -11,6 +11,9 @@
 - The spawn marker also covers enemies that arrive as a group, and wave enemies that arrive hidden without a marker stay out of reach on a guest's screen until they show. The marker is timed to the host's, net of half the ping.
 - Rewards scale with the players in the session: each chest holds one more set of contents per extra player, a cleared room drops its reward once more, and a floor boss leaves one more pedestal. Host setting `LootPerPlayerMode`, also under Online menu > Settings > Gameplay: Off, Half (each extra player adds a 50% chance of one more), One per player (default).
 - The extra sets never repeat a gun or item: a chest does not hold the same one twice, and two boss pedestals never show the same one.
+- The full map opens and closes only for the player who pressed Map. Before, one player opening it opened it on everyone's screen, and kept it open there while they held the button.
+- The full map is each player's own: a teleport picked on it moves only that player, not everyone. A friend's map buttons (zoom, pan, pick) no longer act on your map, opening or closing your map no longer stops or frees your friend's hands, and clicks on an open map are no longer fired as shots on the other screens.
+- The full map can take you to a friend: click their marker (or center the map on it and press Interact) to land next to them. Only outside fights, for both of you.
 
 ## 1.1.9
 
