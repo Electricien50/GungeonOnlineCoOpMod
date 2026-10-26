@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.9
+
+- Map pings: with the full map open, right click a spot, or press X / Square on a controller to ping the spot under the map crosshair. Everyone sees a ring in your color on their minimap, full map and screen for 8 seconds, with a short sound. While the full map is open, right click no longer rolls and X no longer reloads.
+
 ## 1.1.8
 
 - A player who is on fire shows as burning on every screen, and only while they really are. Before, the other screens never showed it (or showed a copy burning from flames on the floor there).
