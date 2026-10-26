@@ -35,6 +35,7 @@ namespace GungeonOnline.Game
         readonly List<Ping> pings = new List<Ping>();
         readonly WireWriter w = new WireWriter(32);
         float lastSent = -10f;
+        int lastMapId;
         bool harnessDone;
         static Texture2D ring;
         public static int Sent, Received;
@@ -73,6 +74,7 @@ namespace GungeonOnline.Game
                 pressed = dev != null && dev.Action3.WasPressed;
                 screen = new Vector2(Screen.width / 2f, Screen.height / 2f); // the map crosshair
             }
+            if (forcePress) { forcePress = false; pressed = true; screen = new Vector2(Screen.width / 2f, Screen.height / 2f); }
             if (pressed) PingAtScreen(screen);
         }
 
@@ -103,6 +105,7 @@ namespace GungeonOnline.Game
         {
             if (Time.realtimeSinceStartup - lastSent < Cooldown) return;
             if (!ScreenToWorld(screen, out var world)) return;
+            if (GameManager.HasInstance && GameManager.Instance.IsLoadingLevel) return;
             var dungeon = GameManager.HasInstance ? GameManager.Instance.Dungeon : null;
             if (dungeon == null || dungeon.data == null || !dungeon.data.CheckInBounds(world.ToIntVector2(VectorConversions.Floor))) return;
             lastSent = Time.realtimeSinceStartup;
@@ -210,6 +213,9 @@ namespace GungeonOnline.Game
         {
             float now = Time.realtimeSinceStartup;
             var map = Minimap.HasInstance ? Minimap.Instance : null;
+            // A new floor builds a new map: pings from the old floor point at places that no longer exist.
+            int mapId = map ? map.GetInstanceID() : 0;
+            if (mapId != lastMapId) { ClearAll(); lastMapId = mapId; }
             for (int i = pings.Count - 1; i >= 0; i--)
             {
                 var p = pings[i];
@@ -257,31 +263,108 @@ namespace GungeonOnline.Game
 
         // ---------- Harness ----------
 
+        // GO_PING_SCRIPT="t:who:action[:x,y];..." who = host, guest, guest2 (or a slot number), any.
+        // Actions: ping (map open, ping at screen fraction x,y, default centre), press (the real Update path, as if
+        // X were pressed), burst (5 pings in one frame: the cooldown must let one through), friend (ping the screen
+        // point over another player's map icon: the ring must land on them), open, close, log.
+        // Older switches GO_PING_AT/GO_PING_WHO/GO_PING_VIEW still work.
+        List<string[]> script;
+        bool forcePress;
+
+        bool IsWho(string who)
+        {
+            if (who == "any") return true;
+            if (who == "host") return NetSession.IsHost;
+            if (who == "guest") return NetSession.LocalSlot == 1;
+            if (who == "guest2") return NetSession.LocalSlot == 2;
+            return int.TryParse(who, out var n) && n == NetSession.LocalSlot;
+        }
+
         void HarnessTick()
         {
             if (harnessDone || !Dev.DevEnv.IsHarness || !NetSession.Active || !GameManager.HasInstance) return;
-            if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_PING_AT"), out var at)) { harnessDone = true; return; }
-            string who = System.Environment.GetEnvironmentVariable("GO_PING_WHO") ?? "guest";
-            if (who != (NetSession.IsHost ? "host" : "guest"))
+            if (script == null)
             {
-                // The other player: GO_PING_VIEW=seconds opens its full map then (to screenshot the ring), closes 4 s later.
-                if (!float.TryParse(System.Environment.GetEnvironmentVariable("GO_PING_VIEW"), out var view)) { harnessDone = true; return; }
-                if (Time.realtimeSinceStartup < view || SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel || !Minimap.HasInstance) return;
-                harnessDone = true;
-                Minimap.Instance.ToggleMinimap(true, true);
-                Plugin.Log.LogInfo($"MAPPING harness: viewer opened the map, pings={pings.Count}");
-                StartCoroutine(CloseMapSoon(4f));
-                return;
+                script = new List<string[]>();
+                var sc = System.Environment.GetEnvironmentVariable("GO_PING_SCRIPT");
+                if (sc == null && System.Environment.GetEnvironmentVariable("GO_PING_AT") != null)
+                    sc = System.Environment.GetEnvironmentVariable("GO_PING_AT") + ":" + (System.Environment.GetEnvironmentVariable("GO_PING_WHO") ?? "guest") + ":ping"
+                       + (System.Environment.GetEnvironmentVariable("GO_PING_VIEW") != null ? ";" + System.Environment.GetEnvironmentVariable("GO_PING_VIEW") + ":not-" + (System.Environment.GetEnvironmentVariable("GO_PING_WHO") ?? "guest") + ":open" : "");
+                if (sc == null) { harnessDone = true; return; }
+                foreach (var e in sc.Split(';')) { var f = e.Split(':'); if (f.Length >= 3) script.Add(f); }
             }
-            float t = Time.realtimeSinceStartup;
-            if (t < at || SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel || !Minimap.HasInstance || !PlayerSlots.Local) return;
-            if (!Minimap.Instance.IsFullscreen) { Minimap.Instance.ToggleMinimap(true, true); return; }
-            harnessDone = true;
+            if (script.Count == 0) { harnessDone = true; return; }
+            var step = script[0];
+            if (!float.TryParse(step[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var at)) { script.RemoveAt(0); return; }
+            if (Time.realtimeSinceStartup < at) return;
+            string who = step[1];
+            bool mine = who.StartsWith("not-") ? !IsWho(who.Substring(4)) : IsWho(who);
+            if (!mine) { script.RemoveAt(0); return; }
+            if (SceneObjects.InBreach || GameManager.Instance.IsLoadingLevel || !Minimap.HasInstance || !Minimap.Instance || !PlayerSlots.Local) return;
+            string act = step[2];
+            bool needsMap = act == "ping" || act == "press" || act == "burst" || act == "friend" || act == "open";
+            if (needsMap && !Minimap.Instance.IsFullscreen) { Minimap.Instance.ToggleMinimap(true, true); return; }
+            script.RemoveAt(0);
             var me = PlayerSlots.Local.CenterPosition;
-            Plugin.Log.LogInfo($"MAPPING harness: my player at {me.x:F1},{me.y:F1}");
-            lastSent = -10f;
-            PingAtScreen(new Vector2(Screen.width / 2f, Screen.height / 2f));
-            StartCoroutine(CloseMapSoon(3f));
+            Vector2 frac = new Vector2(0.5f, 0.5f);
+            if (step.Length > 3) { var xy = step[3].Split(','); float.TryParse(xy[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out frac.x); float.TryParse(xy[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out frac.y); }
+            switch (act)
+            {
+                case "ping":
+                    lastSent = -10f;
+                    Plugin.Log.LogInfo($"MAPPING harness: ping at screen {frac.x:F2},{frac.y:F2}, my player at {me.x:F1},{me.y:F1}");
+                    PingAtScreen(new Vector2(frac.x * Screen.width, frac.y * Screen.height));
+                    break;
+                case "press":
+                    lastSent = -10f;
+                    forcePress = true;
+                    Plugin.Log.LogInfo($"MAPPING harness: press, my player at {me.x:F1},{me.y:F1}");
+                    break;
+                case "burst":
+                    lastSent = -10f;
+                    int before = Sent;
+                    for (int k = 0; k < 5; k++) PingAtScreen(new Vector2((0.3f + 0.1f * k) * Screen.width, frac.y * Screen.height));
+                    Plugin.Log.LogInfo($"MAPPING harness: burst of 5 sent {Sent - before}");
+                    break;
+                case "friend":
+                    foreach (var kv in PlayerSlots.Remotes)
+                    {
+                        if (!kv.Value) continue;
+                        var fw = kv.Value.transform.position;
+                        if (WorldToScreen(fw, out var sp))
+                        {
+                            lastSent = -10f;
+                            Plugin.Log.LogInfo($"MAPPING harness: friend slot={kv.Key} at {fw.x:F1},{fw.y:F1} screen {sp.x / Screen.width:F2},{sp.y / Screen.height:F2}");
+                            PingAtScreen(sp);
+                        }
+                        break;
+                    }
+                    break;
+                case "open":
+                    Plugin.Log.LogInfo($"MAPPING harness: map open, pings={pings.Count}");
+                    break;
+                case "close":
+                    Minimap.Instance.ToggleMinimap(false);
+                    break;
+                case "log":
+                    var sb = new System.Text.StringBuilder($"MAPPING harness: log sent={Sent} received={Received} showing={pings.Count}");
+                    foreach (var pg in pings) sb.Append($" [slot={pg.Slot} {pg.World.x:F1},{pg.World.y:F1} age={Time.realtimeSinceStartup - pg.Born:F1} marker={(pg.Marker ? "yes" : "no")}]");
+                    Plugin.Log.LogInfo(sb.ToString());
+                    break;
+            }
+        }
+
+        /// <summary>Harness: a dungeon position to the screen point over it on the full map (the inverse of ScreenToWorld).</summary>
+        static bool WorldToScreen(Vector2 world, out Vector2 screen)
+        {
+            screen = default;
+            var map = Minimap.Instance;
+            if (!map || map.cameraRef == null) return false;
+            Vector3 vp = map.cameraRef.WorldToViewportPoint(map.transform.position + new Vector3(world.x * 0.125f, world.y * 0.125f, 0f));
+            float vx = (vp.x - 0.5f) / (BraveCameraUtility.ASPECT / 1.7777778f) + 0.5f;
+            var rect = BraveCameraUtility.GetRect();
+            screen = new Vector2(((vx - 0.5f) * rect.width + 0.5f) * Screen.width, ((vp.y - 0.5f) * rect.height + 0.5f) * Screen.height);
+            return true;
         }
 
         System.Collections.IEnumerator CloseMapSoon(float secs)
